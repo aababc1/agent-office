@@ -5,7 +5,7 @@
 #   - changed + quiet for QUIET s → push now (a turn just ended: the office is in a "watchable" state)
 #   - changed but never quiet    → push anyway every MAX s (long tool bursts still surface)
 #   - extractor gone             → one final push, exit
-#   - long job running (KBDS)    → heartbeat push every HEARTBEAT s so "alive since 3h" can be told from "died"
+#   - long job running (compute server)    → heartbeat push every HEARTBEAT s so "alive since 3h" can be told from "died"
 #                                  (the emitter keeps a `.office-running` file while a job runs; removed when none runs)
 # Env: OFFICE_PUSH_QUIET (default 20), OFFICE_PUSH_TICK (default 15), OFFICE_HEARTBEAT (default 1800, 0 = off),
 #      OFFICE_GIT_NAME/EMAIL.

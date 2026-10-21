@@ -221,3 +221,24 @@ def test_follow_mode_is_incremental(tmp_path):
         f.write("\n".join(lines[40:80]) + "\n")
     second = tracker.poll()
     assert second and second[0]["seq"] == first[-1]["seq"] + 1
+
+
+# ---- office-emit (any server, any script) -------------------------------
+def test_emit_cli_builds_pipeline_progress_and_summary(tmp_path, capsys):
+    from office_extract.emit import main as emit
+    d = str(tmp_path); env = ["--project", "metaCRC", "--run", "run_1", "--to", d]
+    assert emit(env + ["run", "start"]) == 0
+    assert emit(env + ["stage", "profiling", "--total", "40", "--unit", "samples"]) == 0
+    assert emit(env + ["job", "start", "--id", "S01", "--stage", "profiling"]) == 0
+    assert os.path.exists(tmp_path / ".office-running")                 # heartbeat marker while a job runs
+    assert emit(env + ["job", "done", "--id", "S01", "--stage", "profiling", "--seconds", "812"]) == 0
+    assert emit(env + ["job", "failed", "--id", "S02", "--stage", "profiling", "--msg", "exit 137"]) == 0
+    assert emit(env + ["note", "QC 끝"]) == 0
+    prog = json.load(open(tmp_path / "pipeline" / "run_1" / "progress.json"))
+    assert prog["stages"]["profiling"] == {"done": 1, "total": 40, "unit": "samples", "updatedAt": prog["stages"]["profiling"]["updatedAt"]}
+    assert prog["jobs"]["S01"]["status"] == "done" and prog["jobs"]["S01"]["seconds"] == 812
+    assert prog["jobs"]["S02"]["status"] == "failed" and prog["counters"] == {"done": 1, "failed": 1}
+    summary = json.load(open(tmp_path / "summary.json"))
+    assert summary["pipeline"]["done"] == 1 and summary["pipeline"]["total"] == 40 and summary["pipeline"]["failed"] == 1
+    assert emit(env + ["run", "end"]) == 0 and not os.path.exists(tmp_path / ".office-running")   # marker gone when nothing runs
+    assert len(open(tmp_path / "pipeline" / "run_1" / "tasks.jsonl").read().splitlines()) == 7

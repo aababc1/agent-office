@@ -19,7 +19,7 @@ Claude와 서브에이전트가 방을 오가며 일하는 모습(캐릭터·말
 [GitHub]         agent-office-data (private)
                                                              │ git pull (1분)
                                                              ▼
-[kbds VM]        viewer/index.html + data/  → 팀원이 cloud.kbds.re.kr 계정으로 접속
+[계산 서버]      KBDS·로컬 서버·Mac: office-emit / trace 리더 → 같은 data repo 또는 Worker 직접 전송
 ```
 
 ## 구성
@@ -74,17 +74,26 @@ push는 타이머가 아니라 **사건 기준**이다: 새 기록이 생기고 
 
 `office-start.sh`는 훅 JSON(stdin)의 `transcript_path`를 쓰고, 훅이 아니면 `~/.claude/projects/*/*.jsonl` 중 가장 최근 파일을 집는다. 즉시 반환하고 추출기·푸셔는 detach된 채 세션이 끝날 때까지 돈다.
 
-## 뷰어 배포 (kbds)
+## 뷰어 배포
 
-정적 파일 + 데이터 폴더면 끝이다.
+기본은 Worker(아래). 정적 호스팅만 쓰려면 `viewer/`와 데이터 폴더를 같이 올리면 된다. 뷰어는 `data/index.json` → `data/<project>/project.json` → `<session>.events.jsonl` 순으로 읽고, 라이브 모드에서는 10초마다(`window.OFFICE_POLL_MS`) 다시 읽는다. 다시보기는 가상 시계로 재생하며 긴 공백은 실시간 2초로 압축한다.
+
+## 아무 서버에서나 진행 보고하기 (office-emit)
+
+계산이 어디서 돌든(로컬 서버, KBDS, Mac) 결과 파일이 생기는 곳에서 한 줄이면 된다. python3만 있으면 된다.
 
 ```bash
-git clone <agent-office> /srv/office && git clone <agent-office-data> /srv/office/viewer/data
-# nginx: root /srv/office/viewer;
-# crontab: * * * * * cd /srv/office/viewer/data && git pull -q --ff-only
+export OFFICE_PROJECT=metaCRC OFFICE_TO=~/office-data            # data repo clone (또는 Worker URL + OFFICE_TOKEN)
+office-emit run start
+office-emit stage profiling --total 40 --unit samples
+office-emit job start  --id S07 --stage profiling
+office-emit job done   --id S07 --stage profiling --seconds 812
+office-emit job failed --id S08 --stage profiling --msg "exit 137 (OOM)"
+office-emit note "QC 끝, 3개 탈락"
+office-emit run end
 ```
 
-뷰어는 `data/index.json` → `data/<project>/project.json` → `<session>.events.jsonl` 순으로 읽고, 라이브 모드에서는 10초마다(`window.OFFICE_POLL_MS`) 다시 읽는다. 다시보기는 가상 시계로 재생하며 긴 공백은 실시간 2초로 압축한다.
+`pipeline/<run>/progress.json`과 `summary.json`의 `pipeline` 블록이 갱신되고, 잡이 도는 동안 `.office-running`이 있어 푸셔가 30분 하트비트를 보낸다. Nextflow 같은 파이프라인은 전용 리더가 trace를 읽어 같은 형식으로 쓴다(예정).
 
 ## 데이터 모델
 
@@ -126,7 +135,7 @@ allow-list 방식이다. 밖으로 나가는 문자열은 캡션뿐이고, 캡�
 
 ## Worker (호스팅 · 로그인 · 실시간 · 수신)
 
-`worker/`의 Cloudflare Worker 하나가 뷰어 서빙, GitHub 로그인, 읽기 API(`/api/*`), WebSocket(`/ws/<project>`), 데이터 수신(GitHub App 웹훅 `/ingest/github`, 직접 전송 `/ingest/events`)을 맡는다. 저장은 D1, 실시간 중계는 Durable Object. 세션 컨테이너는 계속 GitHub로만 push하고(비밀키 불필요), Worker가 웹훅으로 받아 D1에 넣고 뷰어에 밀어준다. KBDS·Mac처럼 비밀키를 둘 수 있는 곳은 직접 전송으로 초 단위. 설정 절차는 `docs/worker-setup.md`. (`docs/hosting-github-login.md`의 Pages Functions 방식은 Worker 없이 쓰는 대안으로 남겨둠.)
+`worker/`의 Cloudflare Worker 하나가 뷰어 서빙, GitHub 로그인, 읽기 API(`/api/*`), WebSocket(`/ws/<project>`), 데이터 수신(GitHub App 웹훅 `/ingest/github`, 직접 전송 `/ingest/events`)을 맡는다. 저장은 D1, 실시간 중계는 Durable Object. 세션 컨테이너는 계속 GitHub로만 push하고(비밀키 불필요), Worker가 웹훅으로 받아 D1에 넣고 뷰어에 밀어준다. 계산 서버(KBDS, 로컬 서버)나 Mac처럼 비밀키를 둘 수 있는 곳은 직접 전송으로 초 단위. 설정 절차는 `docs/worker-setup.md`. (`docs/hosting-github-login.md`의 Pages Functions 방식은 Worker 없이 쓰는 대안으로 남겨둠.)
 
 ## 프로젝트별 접근 권한 (GitHub 로그인)
 

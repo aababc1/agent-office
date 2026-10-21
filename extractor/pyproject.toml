@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 
 [project.scripts]
 office-extract = "office_extract.cli:main"
+office-emit = "office_extract.emit:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

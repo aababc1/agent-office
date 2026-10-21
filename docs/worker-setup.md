@@ -4,7 +4,7 @@ Cloudflare Worker 하나가 뷰어(정적), GitHub 로그인, 읽기 API, WebSoc
 
 ```
 [Claude 세션 컨테이너] ──git push──▶ GitHub data repo ──웹훅──▶ Worker /ingest/github ──▶ D1
-[KBDS · Mac]           ──POST /ingest/events (프로젝트 토큰)──────────────────────────▶ D1
+[계산 서버 · Mac]           ──POST /ingest/events (프로젝트 토큰)──────────────────────────▶ D1
                                                                                      │ Durable Object
 [팀원 폰·PC] ◀── 정적 뷰어 + GitHub 로그인 쿠키 + /api/* + /ws/<project> ◀──────────┘
 ```
@@ -61,7 +61,7 @@ Workers & Pages → Create → **Import a repository** → `aababc1/agent-office
 | `GH_APP_ID` / `GH_APP_PRIVATE_KEY` | 1단계 (pem 파일 내용 전체, 줄바꿈 포함) |
 | `GH_WEBHOOK_SECRET` | 1단계의 웹훅 secret |
 | `SESSION_SECRET` | 임의의 긴 문자열 (예: `openssl rand -hex 32`) |
-| `PROJECT_TOKENS` | `{"metaCRC":"<임의 토큰>"}` — 직접 전송(KBDS·Mac)용. 세션 컨테이너에는 주지 않는다 |
+| `PROJECT_TOKENS` | `{"metaCRC":"<임의 토큰>"}` — 직접 전송(계산 서버·Mac)용. 세션 컨테이너에는 주지 않는다 |
 
 `wrangler.toml`의 `[vars]` `GH_OWNER`, `ADMIN_LOGIN`은 이미 `aababc1`. 이후 `main`에 push할 때마다 자동 재배포.
 
@@ -72,7 +72,7 @@ Workers & Pages → Create → **Import a repository** → `aababc1/agent-office
 3. data repo에 push가 일어나면 수 초 안에 사무실이 움직임 (GitHub App → Recent Deliveries에서 웹훅 응답 `200` 확인 가능)
 4. 다른 계정으로 로그인하면 collaborator가 아닌 층은 🔒
 
-## 5. 직접 전송 (KBDS, Mac)
+## 5. 직접 전송 (계산 서버, Mac)
 
 ```bash
 curl -X POST https://agent-office.<계정>.workers.dev/ingest/events \
@@ -80,7 +80,7 @@ curl -X POST https://agent-office.<계정>.workers.dev/ingest/events \
   -d '{"project":"metaCRC","session":"<id>","events":[...],"progress":{...},"summary":{...},"pipeline":{...}}'
 ```
 
-필드는 전부 선택이다. 받은 즉시 D1에 쓰고 그 층을 보고 있는 모든 뷰어에 WebSocket으로 알린다. KBDS 추출기는 이 경로로 초 단위 갱신을 보낸다.
+필드는 전부 선택이다. 받은 즉시 D1에 쓰고 그 층을 보고 있는 모든 뷰어에 WebSocket으로 알린다. 계산 서버의 리더/office-emit은 이 경로로 초 단위 갱신을 보낸다.
 
 ## 로컬에서 돌려보기
 

@@ -1,7 +1,7 @@
 // Two ways data gets in:
 //   1. GitHub webhook (push to a data repo) → fetch the changed files with the App's installation token → D1
 //      (cloud Claude sessions push to GitHub; no secret has to live inside a session container)
-//   2. Direct POST /ingest/events with a per-project write token (KBDS, a Mac) → D1 at once, seconds of latency
+//   2. Direct POST /ingest/events with a per-project write token (a compute server, a Mac) → D1 at once, seconds of latency
 // Both end with a broadcast to the project's Floor (WebSocket viewers).
 import { hmacHex, json, nowIso, parseJSONL, text, timingSafeEqual } from "./util.js";
 import { rawFile } from "./github.js";
