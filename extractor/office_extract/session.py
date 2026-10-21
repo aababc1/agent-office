@@ -180,24 +180,37 @@ class SessionTracker:
 
     # ---- output --------------------------------------------------------
     # One data dir = one project (= one data repo):
-    #   project.json  summary.json  index.json  sessions/<id>.events.jsonl  sessions/<id>.progress.json
+    #   project.json  summary.json  index.json
+    #   sessions/<id>.progress.json              (has events.chunks / events.count)
+    #   sessions/<id>/events.000.jsonl, 001…     (CHUNK events each; readers fetch only the last chunk while live)
+    CHUNK = 500
+
     def _write(self, events: list[dict[str, Any]]) -> None:
         ses_dir = os.path.join(self.out_dir, "sessions")
-        os.makedirs(ses_dir, exist_ok=True)
-        mode = "a"
+        chunk_dir = os.path.join(ses_dir, self.session)
+        os.makedirs(chunk_dir, exist_ok=True)
         if self.progress is None:
             self.progress = ProgressModel(self.project, self.session, self.user)
-            self._events_path = os.path.join(ses_dir, f"{self.session}.events.jsonl")
-            mode = "w"                                # a (re)start re-derives from the transcript
+            for old in glob.glob(os.path.join(chunk_dir, "events.*.jsonl")):   # a (re)start re-derives from the transcript
+                os.remove(old)
         self.progress.versions = list(self.parser.versions)
         events.sort(key=lambda e: e["t"])             # stable: main/agent interleave by time
-        with open(self._events_path, mode, encoding="utf-8") as f:
+        handles: dict[int, Any] = {}
+        try:
             for ev in events:
                 ev["seq"] = self._seq                 # tracker owns the final order
                 self._seq += 1
                 self.progress.apply(ev)
-                f.write(json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n")
-        _atomic_json(os.path.join(ses_dir, f"{self.session}.progress.json"), self.progress.snapshot())
+                idx = ev["seq"] // self.CHUNK
+                if idx not in handles:
+                    handles[idx] = open(os.path.join(chunk_dir, f"events.{idx:03d}.jsonl"), "a", encoding="utf-8")
+                handles[idx].write(json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n")
+        finally:
+            for h in handles.values():
+                h.close()
+        snap = self.progress.snapshot()
+        snap["events"] = {"count": self._seq, "chunks": (self._seq + self.CHUNK - 1) // self.CHUNK, "chunkSize": self.CHUNK}
+        _atomic_json(os.path.join(ses_dir, f"{self.session}.progress.json"), snap)
         self._mark_running()
         self._write_indexes()
 

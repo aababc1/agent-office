@@ -833,11 +833,25 @@ async function selectSession(ses) {
   await refresh(true);
   clearInterval(S.pollTimer); S.pollTimer = setInterval(() => { if (S.mode === 'live') refresh(false); }, POLL_MS);
 }
+const chunkCache = {};     // `${session}/${idx}` → events of a finished chunk (never changes again)
+async function loadEventChunks(progress, full) {
+  const info = (progress && progress.events) || null;
+  if (!info) return await getEvents(`sessions/${S.session}.events.jsonl`);          // legacy single file
+  const out = [];
+  for (let i = 0; i < info.chunks; i++) {
+    const key = `${S.session}/${i}`; const last = i === info.chunks - 1;
+    if (!last && chunkCache[key] && !full) { out.push(...chunkCache[key]); continue; }
+    const evs = await getEvents(`sessions/${S.session}/events.${String(i).padStart(3, '0')}.jsonl`);
+    if (!last) chunkCache[key] = evs;
+    out.push(...evs);
+  }
+  return out;
+}
 async function refresh(full) {
   let progress = null, events = null;
   try { progress = await getJSON(`sessions/${S.session}.progress.json`); } catch (e) { /* keep */ }
-  try { events = await getEvents(`sessions/${S.session}.events.jsonl`); } catch (e) { events = S.events; }
   if (progress) S.progress = progress;
+  try { events = await loadEventChunks(progress || S.progress, full); } catch (e) { events = S.events; }
   const known = S.events.length; S.events = events || [];
   if (full || known === 0 || S.events.length < known) { resetFloor(); for (const e of S.events) applyEvent(e, true); S.cursor = S.events.length; }
   else { const fresh = S.events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 400)); S.cursor = S.events.length; }

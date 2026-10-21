@@ -1,6 +1,7 @@
 """Tests run against fixtures/session-sample (a real transcript, values truncated)."""
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
@@ -29,7 +30,7 @@ def extracted():
         events = tracker.poll()
         ses = os.path.join(out, "sessions")
         progress = json.load(open(os.path.join(ses, tracker.session + ".progress.json")))
-        on_disk = [json.loads(l) for l in open(os.path.join(ses, tracker.session + ".events.jsonl"))]
+        on_disk = [json.loads(l) for c in sorted(glob.glob(os.path.join(ses, tracker.session, "events.*.jsonl"))) for l in open(c)]
         index = json.load(open(os.path.join(out, "index.json")))
         summary = json.load(open(os.path.join(out, "summary.json")))
         project = json.load(open(os.path.join(out, "project.json")))
@@ -180,6 +181,19 @@ def test_progress_todo_write_is_whole_truth():
     assert [t["id"] for t in snap["tasks"]] == ["1"]       # task 2 was removed from the list
     assert snap["progress"] == {"tasksDone": 1, "tasksTotal": 1, "ratio": 1.0}
     assert snap["status"] == "idle"
+
+
+def test_events_are_chunked(tmp_path):
+    SessionTracker.CHUNK = 50
+    try:
+        tracker = SessionTracker(FIXTURE, str(tmp_path), project="p"); events = tracker.poll()
+        chunks = sorted(glob.glob(str(tmp_path / "sessions" / tracker.session / "events.*.jsonl")))
+        prog = json.load(open(tmp_path / "sessions" / (tracker.session + ".progress.json")))
+        assert len(chunks) == (len(events) + 49) // 50 == prog["events"]["chunks"] and prog["events"]["count"] == len(events)
+        assert sum(1 for c in chunks for _ in open(c)) == len(events)
+        assert [json.loads(l)["seq"] for l in open(chunks[0])] == list(range(50))
+    finally:
+        SessionTracker.CHUNK = 500
 
 
 def test_index_summary_project_files(extracted):
