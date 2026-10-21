@@ -31,7 +31,8 @@ Claude와 서브에이전트가 방을 오가며 일하는 모습(캐릭터·말
 | `hooks/` | 세션 시작 시 추출기를 띄우는 훅과 git 푸셔 |
 | `viewer/index.html` | 단일 파일 아이소메트릭 뷰어 (캔버스로 그림, 이미지 에셋 없음, 정적 호스팅용) |
 | `viewer/build_preview.py` | 데이터를 내장한 미리보기 HTML 생성 |
-| `functions/auth/` | Cloudflare Pages Functions: GitHub 로그인 코드 교환·갱신 |
+| `worker/` | Cloudflare Worker: 뷰어 서빙 + 로그인 + API + WebSocket + 수신 (D1, Durable Object) |
+| `functions/auth/` | (대안) Pages Functions만으로 GitHub 로그인 |
 | `docs/` | 호스팅·로그인 설정 절차 |
 | `fixtures/session-sample/` | 실제 세션을 값만 잘라낸 테스트 픽스처 |
 | `tests/` | pytest |
@@ -122,6 +123,10 @@ allow-list 방식이다. 밖으로 나가는 문자열은 캡션뿐이고, 캡�
 ## 폰에서 보기 (PWA)
 
 `viewer/`에는 `manifest.webmanifest`, `sw.js`, `icons/`가 같이 있다. https로 호스팅되면 iPhone·Android에서 "홈 화면에 추가"로 앱처럼 열리고, 마지막 상태가 캐시돼 오프라인에서도 직전 사무실이 먼저 뜬다. 760px 이하에서는 사무실이 화면 폭 전체를 쓰고(핀치 줌·드래그), 진행도/사람/로그/층은 아래 탭으로 바뀐다. ◎ 버튼은 Claude 위치로 화면을 옮긴다.
+
+## Worker (호스팅 · 로그인 · 실시간 · 수신)
+
+`worker/`의 Cloudflare Worker 하나가 뷰어 서빙, GitHub 로그인, 읽기 API(`/api/*`), WebSocket(`/ws/<project>`), 데이터 수신(GitHub App 웹훅 `/ingest/github`, 직접 전송 `/ingest/events`)을 맡는다. 저장은 D1, 실시간 중계는 Durable Object. 세션 컨테이너는 계속 GitHub로만 push하고(비밀키 불필요), Worker가 웹훅으로 받아 D1에 넣고 뷰어에 밀어준다. KBDS·Mac처럼 비밀키를 둘 수 있는 곳은 직접 전송으로 초 단위. 설정 절차는 `docs/worker-setup.md`. (`docs/hosting-github-login.md`의 Pages Functions 방식은 Worker 없이 쓰는 대안으로 남겨둠.)
 
 ## 프로젝트별 접근 권한 (GitHub 로그인)
 

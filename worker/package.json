@@ -1,0 +1,12 @@
+{
+  "name": "agent-office-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply agent-office --local",
+    "migrate": "wrangler d1 migrations apply agent-office --remote"
+  },
+  "devDependencies": { "wrangler": "^4" }
+}

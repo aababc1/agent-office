@@ -1,0 +1,35 @@
+name = "agent-office"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The viewer is served as static assets by the same Worker; API/auth/ws/ingest paths hit the Worker first.
+[assets]
+directory = "../viewer"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/auth/*", "/ws/*", "/ingest/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "agent-office"
+database_id = "00000000-0000-0000-0000-000000000000"   # wrangler d1 create agent-office → paste the id (any value works for --local)
+
+[[durable_objects.bindings]]
+name = "FLOOR"
+class_name = "Floor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Floor"]
+
+[vars]
+GH_OWNER = "aababc1"              # data repos live under this account
+ADMIN_LOGIN = "aababc1"           # may register projects / rotate write tokens
+SESSION_TTL_DAYS = "30"
+
+# Secrets (wrangler secret put NAME, or the dashboard → Settings → Variables):
+#   GH_CLIENT_ID, GH_CLIENT_SECRET   GitHub App OAuth (user login)
+#   GH_APP_ID, GH_APP_PRIVATE_KEY     GitHub App credentials (reading data repos on webhook)
+#   GH_WEBHOOK_SECRET                 shared secret of the data repos' webhook
+#   SESSION_SECRET                    random 32+ bytes, signs the login cookie
+#   PROJECT_TOKENS                    JSON {"<project>": "<write token>"} for direct ingest (KBDS, Mac)

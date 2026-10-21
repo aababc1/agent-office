@@ -254,7 +254,7 @@ select.btn{padding:4px 6px}
 const BASE = (window.OFFICE_DATA_BASE || 'data').replace(/\/$/, '');
 const EMB = window.OFFICE_DATA || null;
 const POLL_MS = window.OFFICE_POLL_MS || 10000;
-const MODE = EMB ? 'static' : (window.OFFICE_MODE || 'static');       // 'github': floors = data repos the viewer can read
+const MODE = EMB ? 'static' : (window.OFFICE_MODE || 'static');       // 'static' | 'github' (repos via the person's token) | 'worker' (Worker API + WebSocket)
 const parseJSONL = t => t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 
 // ---- GitHub mode: the signed-in person's own token (GitHub App, Contents: read) reads the data repos directly.
@@ -309,6 +309,29 @@ async function ghFloors() {       // one repo may hold one project (usual) or se
   for (const reg of registry) if (!floors.some(f => f.repo === reg.repo)) floors.push({name: reg.name, repo: reg.repo, key: `${reg.repo}::${reg.name}`, locked: true, sessions: 0, active: 0, lastAt: null});
   floors.sort((a, b) => (b.active || 0) - (a.active || 0) || String(b.lastAt || '').localeCompare(String(a.lastAt || '')));
   return floors;
+}
+
+// ---- Worker mode: cookie session, REST + WebSocket; the Worker checks repo membership server-side.
+const WK = {user: null, sock: null, backoff: 1000};
+async function wkFetch(path) {
+  const r = await fetch(path, {cache: 'no-store', credentials: 'same-origin'});
+  if (r.status === 401) { WK.user = null; renderAuth(); throw new Error('sign in'); }
+  if (!r.ok) throw new Error(`api ${r.status}`);
+  return await r.json();
+}
+function wkConnect() {
+  if (MODE !== 'worker' || !S.project || !WK.user) return;
+  if (WK.sock) { const old = WK.sock; WK.sock = null; try { old.close(); } catch (e) { /* closing */ } }
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${encodeURIComponent(S.project)}`;
+  let sock; try { sock = new WebSocket(url); } catch (e) { return; }
+  WK.sock = sock;
+  sock.onopen = () => { WK.backoff = 1000; };
+  sock.onmessage = ev => { let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg.kind !== 'update' || msg.project !== S.project || S.mode !== 'live') return;
+    if ((msg.sessions || []).includes(S.session)) refresh(false);
+    if (msg.projectChanged || !(msg.sessions || []).includes(S.session)) followLatest(); };
+  sock.onclose = () => { if (WK.sock !== sock) return; WK.sock = null; setTimeout(wkConnect, WK.backoff); WK.backoff = Math.min(WK.backoff * 2, 30000); };
+  sock.onerror = () => { try { sock.close(); } catch (e) { /* noop */ } };
 }
 
 async function getJSON(path) {
@@ -769,7 +792,7 @@ function renderFloors() {
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || (MODE === 'github' && !GHUB.token ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
@@ -787,6 +810,7 @@ async function boot() {
   new MutationObserver(() => { PAL = isDark() ? PALETTE.dark : PALETTE.light; S.static = buildStatic(); renderLegend(); }).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
   resize(); fitCamera(); S.static = buildStatic(); ensureChar('user');
   if (MODE === 'github') { ghLoad(); ghFromHash(); }
+  if (MODE === 'worker') { try { WK.user = await wkFetch('/api/me'); } catch (e) { WK.user = null; } }
   renderAuth();
   await loadIndex();
   renderFloors();
@@ -798,11 +822,20 @@ async function boot() {
   setInterval(() => { if (S.mode === 'live') { renderPeople(); if (S.progress) renderProgress(); } }, 1000);
 }
 async function loadIndex() {
+  if (MODE === 'worker') {
+    try { const r = await wkFetch('/api/floors'); S.index = {projects: r.floors.map(f => ({...f, key: f.name}))}; } catch (e) { S.index = {projects: []}; }
+    return;
+  }
   if (MODE === 'github') { if (!GHUB.token) { S.index = {projects: []}; return; } try { S.index = {projects: await ghFloors()}; } catch (e) { S.index = {projects: []}; } return; }
   try { S.index = await getJSON('index.json'); } catch (e) { S.index = {projects: []}; }
 }
 function renderAuth() {
-  const a = $('auth'); if (MODE !== 'github') { a.hidden = true; return; }
+  const a = $('auth');
+  if (MODE === 'worker') {
+    if (!WK.user) { a.innerHTML = '<a class="btn" href="auth/login">GitHub로 로그인</a>'; return; }
+    a.innerHTML = `<img src="${esc(WK.user.avatar)}" alt=""><span>${esc(WK.user.login)}</span><a class="btn" href="auth/logout">로그아웃</a>`; return;
+  }
+  if (MODE !== 'github') { a.hidden = true; return; }
   if (!GHUB.token) { a.innerHTML = '<a class="btn" href="auth/login">GitHub로 로그인</a>'; return; }
   a.innerHTML = `${GHUB.user ? `<img src="${esc(GHUB.user.avatar_url)}" alt=""><span>${esc(GHUB.user.login)}</span>` : '<span>로그인됨</span>'}<button class="btn" type="button" id="b-logout">로그아웃</button>`;
   $('b-logout').onclick = () => { ghLogout(); S.index = {projects: []}; S.events = []; S.progress = null; resetFloor(); renderAuth(); renderFloors(); renderSessions(); renderPeople(); renderLog(); $('t-project').textContent = 'Agent Office'; };
@@ -814,7 +847,7 @@ async function followLatest() {
   if (!$('follow').checked) return;
   const projects = (S.index.projects || []).filter(p => !p.locked); const active = projects.find(p => p.active);
   if (active && (active.key || active.name) !== (S.floorKey || S.project)) { await selectProject(active.key || active.name, (S.index.projects || []).length - (S.index.projects || []).indexOf(active), true); return; }
-  try { S.projectInfo = await getJSON('project.json'); } catch (e) { return; }
+  try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { return; }
   renderSessions();
   const newest = (S.projectInfo.sessions || [])[0];
   if (newest && newest.session !== S.session && (liveStatus(newest) === 'active' || !(S.progress && liveStatus(S.progress) === 'active'))) await selectSession(newest.session);
@@ -823,15 +856,16 @@ async function selectProject(key, no, showIndicator) {
   const floor = (S.index.projects || []).find(p => (p.key || p.name) === key) || {name: key};
   S.project = floor.name; S.repo = floor.repo || null; S.floorKey = key; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
-  try { S.projectInfo = await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
+  try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
+  if (MODE === 'worker') wkConnect();
   const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
 async function selectSession(ses) {
   S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
   $('t-project').textContent = S.project; $('t-session').textContent = shortId(ses);
   await refresh(true);
-  clearInterval(S.pollTimer); S.pollTimer = setInterval(() => { if (S.mode === 'live') refresh(false); }, POLL_MS);
+  clearInterval(S.pollTimer); S.pollTimer = setInterval(() => { if (S.mode === 'live' && !(MODE === 'worker' && WK.sock && WK.sock.readyState === 1)) refresh(false); }, POLL_MS);
 }
 const chunkCache = {};     // `${session}/${idx}` → events of a finished chunk (never changes again)
 async function loadEventChunks(progress, full) {
@@ -849,9 +883,15 @@ async function loadEventChunks(progress, full) {
 }
 async function refresh(full) {
   let progress = null, events = null;
-  try { progress = await getJSON(`sessions/${S.session}.progress.json`); } catch (e) { /* keep */ }
+  if (MODE === 'worker') {
+    const since = full ? -1 : (S.events.length ? S.events[S.events.length - 1].seq : -1);
+    try { const r = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/sessions/${encodeURIComponent(S.session)}?since=${since}`);
+      progress = r.progress; events = full ? r.events : S.events.concat(r.events.filter(e => e.seq > since)); } catch (e) { events = S.events; }
+  } else {
+    try { progress = await getJSON(`sessions/${S.session}.progress.json`); } catch (e) { /* keep */ }
+    try { events = await loadEventChunks(progress || S.progress, full); } catch (e) { events = S.events; }
+  }
   if (progress) S.progress = progress;
-  try { events = await loadEventChunks(progress || S.progress, full); } catch (e) { events = S.events; }
   const known = S.events.length; S.events = events || [];
   if (full || known === 0 || S.events.length < known) { resetFloor(); for (const e of S.events) applyEvent(e, true); S.cursor = S.events.length; }
   else { const fresh = S.events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 400)); S.cursor = S.events.length; }

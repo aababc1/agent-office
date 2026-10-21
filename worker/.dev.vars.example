@@ -1,0 +1,6 @@
+SESSION_SECRET=change-me-change-me-change-me
+PROJECT_TOKENS={"HeadQuarters":"devtoken"}
+DEV_ALLOW_ALL=1
+GH_CLIENT_ID=x
+GH_CLIENT_SECRET=x
+GH_WEBHOOK_SECRET=whsec
