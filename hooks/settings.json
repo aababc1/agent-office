@@ -1,0 +1,16 @@
+{
+  "_comment": "Merge into <project>/.claude/settings.json (repo-based sessions) or ~/.claude/settings.json (local CLI). The hook returns immediately; the follower runs detached.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OFFICE_DATA_REPO=\"${OFFICE_DATA_REPO:-}\" OFFICE_PROJECT=\"${OFFICE_PROJECT:-}\" bash \"${CLAUDE_PROJECT_DIR:-.}/.agent-office/hooks/office-start.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

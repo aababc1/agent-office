@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-office/events.v1",
+  "title": "Agent Office event (one JSON object per line in <session>.events.jsonl)",
+  "type": "object",
+  "required": ["v", "seq", "t", "ses", "actor", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "v":      { "const": 1, "description": "schema version" },
+    "seq":    { "type": "integer", "minimum": 0, "description": "monotonic per session file; viewer orders by this" },
+    "t":      { "type": "string", "format": "date-time", "description": "UTC ISO-8601 timestamp of the source record" },
+    "ses":    { "type": "string", "description": "session id = source file basename without .jsonl" },
+    "actor":  { "type": "string", "pattern": "^(user|claude|agent:[A-Za-z0-9_-]+)$" },
+    "kind":   { "type": "string", "enum": [
+      "session_start", "session_end",
+      "say", "think", "prompt", "interrupt",
+      "tool", "tool_done", "tool_err",
+      "task", "spawn", "finish"
+    ]},
+    "tool":    { "type": "string", "description": "tool name for tool/tool_done/tool_err" },
+    "room":    { "type": "string", "enum": ["archive", "dev", "server", "search", "meeting", "desk", "lounge", "elevator"],
+                 "description": "where the actor goes for this event; absent = stay where you are" },
+    "caption": { "type": "string", "maxLength": 160, "description": "sanitized short text for the speech bubble" },
+    "ref":     { "type": "string", "description": "tool_use_id pairing tool ↔ tool_done/tool_err; agent id for spawn/finish" },
+    "dur_ms":  { "type": "integer", "minimum": 0, "description": "thinking duration (think) or tool wall time (tool_done/tool_err)" },
+    "meta":    { "type": "object", "description": "small, non-sensitive extras: agentType, cwd basename, gitBranch, version, taskId, status" }
+  }
+}

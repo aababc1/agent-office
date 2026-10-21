@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--OFFICE:INNER-START-->
+<title>Agent Office</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+/* Layout: floor guide | office floor | progress — a drafting-table floor plan on cool paper; rooms are tinted zones,
+   people are chips that slide between them, and the right rail reads like a site log. */
+:root{
+  --paper:#F4F6F8; --panel:#FFFFFF; --ink:#1B2430; --muted:#5F6D7B; --line:#D5DDE5; --line-strong:#AEB9C4;
+  --accent:#0B6E7F; --accent-ink:#FFFFFF; --live:#15A35D; --warn:#C7791A; --bad:#C8463B;
+  --bubble:#FFFFFF; --bubble-ink:#1B2430; --shadow:0 1px 2px rgba(20,30,40,.08),0 6px 18px rgba(20,30,40,.08);
+  --r-archive:#DFEBE3; --r-dev:#DEE5F2; --r-server:#E6E8EC; --r-search:#DCEAF3; --r-meeting:#F1EAD9; --r-desk:#ECE4F0; --r-lounge:#EEF0EC; --r-elevator:#E3E4E6;
+  --c-claude:#D86A2E; --c-user:#3B5BA9; --c-explore:#1F8A8A; --c-plan:#7A4FB3; --c-general:#3B6EC9; --c-guide:#B08A1E; --c-other:#6B7580;
+  --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#10161D; --panel:#171F28; --ink:#E7ECF1; --muted:#97A5B3; --line:#2A3542; --line-strong:#3E4C5B;
+  --accent:#4FB3C4; --accent-ink:#0B1218; --live:#3BCB7E; --warn:#E39A3B; --bad:#E86A5E;
+  --bubble:#1F2933; --bubble-ink:#E7ECF1; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
+  --r-archive:#1B2A24; --r-dev:#1B2433; --r-server:#20262D; --r-search:#182733; --r-meeting:#2B2619; --r-desk:#27202C; --r-lounge:#1C2220; --r-elevator:#23272C;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#10161D; --panel:#171F28; --ink:#E7ECF1; --muted:#97A5B3; --line:#2A3542; --line-strong:#3E4C5B;
+  --accent:#4FB3C4; --accent-ink:#0B1218; --live:#3BCB7E; --warn:#E39A3B; --bad:#E86A5E;
+  --bubble:#1F2933; --bubble-ink:#E7ECF1; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
+  --r-archive:#1B2A24; --r-dev:#1B2433; --r-server:#20262D; --r-search:#182733; --r-meeting:#2B2619; --r-desk:#27202C; --r-lounge:#1C2220; --r-elevator:#23272C;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+button{font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:240px minmax(0,1fr) 300px;gap:14px;min-height:100%}
+@media (max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)} .rail{grid-column:1/-1}}
+@media (max-width:720px){.app{grid-template-columns:minmax(0,1fr)} .guide,.rail{grid-column:auto}}
+
+/* ---- left: floor guide ---- */
+.guide{display:flex;flex-direction:column;gap:10px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.guide h2,.rail h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 12px 6px;font-weight:600}
+.floors{list-style:none;margin:0;padding:0 6px 6px}
+.floor-item{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.floor-item:hover{background:var(--paper)}
+.floor-item.sel{border-color:var(--accent);background:var(--paper)}
+.floor-no{font-family:var(--mono);font-size:12px;font-weight:500;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:2px 6px;min-width:34px;text-align:center}
+.floor-item.sel .floor-no{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.floor-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.floor-sub{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--line-strong);display:inline-block}
+.dot.live{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
+.sessions{list-style:none;margin:0;padding:0 6px 6px;display:flex;flex-direction:column;gap:2px}
+.ses-item{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px}
+.ses-item:hover{background:var(--paper)}
+.ses-item.sel{background:var(--paper);outline:1px solid var(--accent)}
+.ses-id{font-family:var(--mono);color:var(--muted)}
+.ses-time{color:var(--muted);white-space:nowrap}
+.ses-item .pill{margin-left:auto}
+
+/* ---- center: office ---- */
+.main{display:flex;flex-direction:column;gap:10px;min-width:0}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px}
+.topbar .title{font-weight:600;font-size:15px}
+.topbar .sub{color:var(--muted);font-family:var(--mono);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.live,.pill.active{color:var(--live);border-color:color-mix(in srgb,var(--live) 50%,transparent)}
+.pill.live .dot,.pill.active .dot{animation:pulse 1.6s infinite}
+.pill.idle{color:var(--warn)} .pill.ended{color:var(--muted)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 2px color-mix(in srgb,var(--live) 30%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+.controls{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:500}
+.btn:hover{border-color:var(--line-strong)} .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:focus-visible,.floor-item:focus-visible,.ses-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+select.btn{padding:4px 6px}
+.scrub{display:flex;align-items:center;gap:8px;padding:0 12px 10px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.scrub input{flex:1;min-width:0;accent-color:var(--accent)}
+.floor-wrap{padding:12px}
+.floor{position:relative;width:100%;aspect-ratio:16/10;max-width:100%;border:1.5px solid var(--line-strong);border-radius:6px;overflow:hidden;
+  background:var(--paper);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:5% 8%}
+.room{position:absolute;border:1px solid var(--line-strong);padding:6px 8px;overflow:hidden}
+.room .rname{font-size:11px;font-weight:600;letter-spacing:.02em}
+.room .ren{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.room .furn{position:absolute;inset:auto 8px 8px 8px;display:flex;gap:6px;flex-wrap:wrap;opacity:.55;pointer-events:none}
+.furn i{display:block;width:18px;height:9px;border:1px solid var(--line-strong);border-radius:2px;background:var(--panel)}
+.furn i.tall{height:16px;width:8px} .furn i.round{width:12px;height:12px;border-radius:50%}
+.room.hot{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent)}
+.char{position:absolute;width:0;height:0;transition:left 1.1s cubic-bezier(.4,.1,.2,1),top 1.1s cubic-bezier(.4,.1,.2,1);z-index:2}
+.char .body{position:absolute;left:-16px;top:-16px;width:32px;height:32px;border-radius:50% 50% 45% 45%;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:600;font-size:13px;border:2px solid var(--panel);box-shadow:var(--shadow)}
+.char .name{position:absolute;top:18px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:600;background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:1px 6px;color:var(--ink)}
+.char.walking .body{animation:bob .35s infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
+.char.gone{opacity:0;transition:opacity .8s}
+.bubble{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);width:max-content;min-width:48px;max-width:min(240px,48vw);background:var(--bubble);color:var(--bubble-ink);
+  border:1px solid var(--line-strong);border-radius:10px;padding:5px 8px;font-size:11px;line-height:1.35;box-shadow:var(--shadow);z-index:3;white-space:normal;word-break:break-word}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-6px;width:9px;height:9px;background:var(--bubble);border-right:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
+.bubble.think{border-style:dashed;border-radius:14px;color:var(--muted)}
+.bubble.think::after{border-style:dashed;}
+.bubble.tool{font-family:var(--mono);font-size:10.5px}
+.bubble.err{border-color:var(--bad);color:var(--bad)}
+.bubble .el{color:var(--muted);font-family:var(--mono);font-size:10px;margin-left:4px}
+.bubble.gone{opacity:0;transition:opacity .6s}
+.sweat{position:absolute;left:14px;top:-22px;font-size:12px}
+.char .cue{position:absolute;left:14px;top:-24px;font-size:12px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
+.char.zzz .cue::before{content:"💤"}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:0 12px 12px;font-size:11px;color:var(--muted)}
+.legend b{color:var(--ink);font-weight:600} .legend i{display:inline-block;width:10px;height:10px;border:1px solid var(--line-strong);border-radius:2px;vertical-align:-1px;margin-right:4px}
+
+/* ---- right: rail ---- */
+.rail{display:flex;flex-direction:column;gap:10px;min-width:0}
+.rail .sec{padding:0 12px 10px}
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 12px 10px}
+.kpi div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kpi .v{font-family:var(--mono);font-size:18px;font-weight:500;font-variant-numeric:tabular-nums}
+.kpi .k{font-size:10px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.bar{height:8px;background:var(--paper);border:1px solid var(--line);border-radius:999px;overflow:hidden;margin:6px 0 2px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .6s}
+.people{display:flex;flex-direction:column;gap:8px}
+.person{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:start}
+.person .av{width:26px;height:26px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px}
+.person .pn{font-weight:600;font-size:12px;display:flex;gap:6px;align-items:baseline;min-width:0}
+.person .pn small{color:var(--muted);font-weight:400;font-family:var(--mono);font-size:10px}
+.person .pc{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person .pm{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.task{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.task .st{flex:none;margin-top:2px;width:14px;height:14px;border-radius:4px;border:1.5px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center;font-size:9px}
+.task.completed .st{background:var(--live);border-color:var(--live);color:#fff}
+.task.in_progress .st{border-color:var(--accent);box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--accent) 35%,transparent)}
+.task.completed .tx{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-strong)}
+.task .tid{font-family:var(--mono);color:var(--muted);font-size:10px;flex:none;margin-top:1px}
+.files{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.files span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:340px;overflow:auto;font-size:11px}
+.log li{display:grid;grid-template-columns:52px 16px minmax(0,1fr);gap:6px;align-items:start}
+.log .lt{font-family:var(--mono);color:var(--muted);font-size:10px;margin-top:1px}
+.log .la{width:14px;height:14px;border-radius:50%;margin-top:1px}
+.log .lc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log .lc.say{white-space:normal}
+.empty{padding:20px 12px;color:var(--muted);font-size:12px}
+.note{font-size:11px;color:var(--muted);padding:0 12px 10px}
+@media (prefers-reduced-motion:reduce){.char,.bar i{transition:none}.char.walking .body,.pill.live .dot,.pill.active .dot{animation:none}}
+</style>
+<!--OFFICE:HEAD-END-->
+</head>
+<body>
+<!--OFFICE:BODY-START-->
+<div class="app">
+  <aside class="guide">
+    <section class="card">
+      <h2>층별 안내 · Floor guide</h2>
+      <ul class="floors" id="floors"></ul>
+    </section>
+    <section class="card">
+      <h2>세션</h2>
+      <ul class="sessions" id="sessions"></ul>
+    </section>
+    <section class="card">
+      <h2>어디서 무엇을 하나</h2>
+      <div class="legend" id="legend"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <section class="card">
+      <div class="topbar">
+        <span class="title" id="t-project">—</span>
+        <span class="sub" id="t-session"></span>
+        <span class="pill" id="t-status"><span class="dot"></span><span>…</span></span>
+        <div class="controls">
+          <button class="btn on" id="b-live" type="button">라이브</button>
+          <button class="btn" id="b-replay" type="button">▶ 다시보기</button>
+          <select class="btn" id="speed" aria-label="재생 속도">
+            <option value="20">20×</option><option value="60" selected>60×</option><option value="300">300×</option>
+          </select>
+        </div>
+      </div>
+      <div class="scrub" id="scrub" hidden><span id="s-time">00:00</span><input type="range" id="s-range" min="0" max="0" value="0" aria-label="타임라인"><span id="s-count">0/0</span></div>
+      <div class="floor-wrap"><div class="floor" id="floor"></div></div>
+    </section>
+  </main>
+
+  <aside class="rail">
+    <section class="card">
+      <h2>진행도</h2>
+      <div class="sec">
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span>할 일</span><span class="mono" id="p-ratio">—</span></div>
+        <div class="bar"><i id="p-bar" style="width:0%"></i></div>
+      </div>
+      <div class="kpi">
+        <div><div class="v" id="k-commits">0</div><div class="k">commits</div></div>
+        <div><div class="v" id="k-files">0</div><div class="k">files touched</div></div>
+        <div><div class="v" id="k-tools">0</div><div class="k">tool calls</div></div>
+        <div><div class="v" id="k-think">0m</div><div class="k">thinking</div></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>사무실 사람들 <span id="p-count"></span></h2>
+      <div class="sec people" id="people"></div>
+    </section>
+    <section class="card">
+      <h2>할 일 목록</h2>
+      <div class="sec"><ul class="tasks" id="tasks"></ul></div>
+    </section>
+    <section class="card">
+      <h2>git · 손댄 파일</h2>
+      <div class="sec files" id="files"></div>
+    </section>
+    <section class="card">
+      <h2>활동 로그</h2>
+      <div class="sec"><ul class="log" id="log"></ul></div>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+'use strict';
+// ------------------------------------------------------------------ data access
+const BASE = (window.OFFICE_DATA_BASE || 'data').replace(/\/$/, '');
+const EMB = window.OFFICE_DATA || null;            // embedded fallback (preview builds)
+const POLL_MS = window.OFFICE_POLL_MS || 10000;
+
+async function getJSON(path) {
+  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return await r.json(); } catch (e) { /* fall through */ }
+  if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
+  throw new Error('missing ' + path);
+}
+async function getEvents(path) {
+  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return parseJSONL(await r.text()); } catch (e) { /* fall through */ }
+  if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
+  throw new Error('missing ' + path);
+}
+const parseJSONL = t => t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+
+// ------------------------------------------------------------------ office geometry (percent of floor)
+const ROOMS = {
+  archive: {x:0,  y:0,  w:34, h:38, ko:'자료실',     en:'archive',  furn:'tall tall tall tall'},
+  meeting: {x:34, y:0,  w:32, h:38, ko:'회의실',     en:'meeting',  furn:'round round round'},
+  search:  {x:66, y:0,  w:34, h:38, ko:'정보검색실', en:'search',   furn:'desk desk'},
+  dev:     {x:0,  y:38, w:34, h:38, ko:'개발실',     en:'dev',      furn:'desk desk desk desk desk desk'},
+  desk:    {x:34, y:38, w:32, h:38, ko:'내 자리',    en:'desk',     furn:'desk round'},
+  server:  {x:66, y:38, w:34, h:38, ko:'서버실',     en:'server',   furn:'tall tall tall'},
+  lounge:  {x:0,  y:76, w:66, h:24, ko:'라운지',     en:'lounge',   furn:'round round desk'},
+  elevator:{x:66, y:76, w:34, h:24, ko:'엘리베이터', en:'elevator', furn:'tall'},
+};
+const LEGEND = [['archive','파일 읽기·검색'],['dev','코드 작성·수정'],['server','명령 실행·git'],['search','웹·외부 도구'],['meeting','계획·할 일·스킬'],['desk','질문·에이전트 호출'],['elevator','서브에이전트 출퇴근']];
+const TOOL_ICON = {Read:'📖',Glob:'🔎',Grep:'🔎',Edit:'✏️',Write:'📝',MultiEdit:'✏️',NotebookEdit:'✏️',Bash:'⌨️',WebSearch:'🌐',WebFetch:'🌐',
+  TodoWrite:'📋',TaskCreate:'📋',TaskUpdate:'📋',AskUserQuestion:'🙋',SendUserMessage:'💬',SendUserFile:'📎',Agent:'🛗',Task:'🛗',Skill:'📚',ToolSearch:'🧰'};
+const toolIcon = t => TOOL_ICON[t] || (t && t.startsWith('mcp__') ? '🔌' : '🔧');
+const costume = type => ({Explore:'var(--c-explore)',Plan:'var(--c-plan)','general-purpose':'var(--c-general)','claude-code-guide':'var(--c-guide)'})[type] || 'var(--c-other)';
+
+// ------------------------------------------------------------------ state
+const S = {
+  index: null, project: null, projectInfo: null, session: null,
+  events: [], progress: null,
+  chars: {},            // actor -> {room, bubble, el, color, label, gone, lastKind, lastT}
+  mode: 'live',         // live | replay
+  cursor: 0,            // events applied (replay)
+  clock: () => Date.now(),
+  replay: {timer: null, vt: 0, speed: 60, last: 0},
+  pollTimer: null,
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tsOf = e => Date.parse(e.t);
+const fmtRel = (iso, now = Date.now()) => { if (!iso) return ''; const d = Math.max(0, (now - Date.parse(iso)) / 1000);
+  return d < 5 ? '방금' : d < 60 ? `${d|0}초 전` : d < 3600 ? `${(d/60)|0}분 전` : d < 86400 ? `${(d/3600)|0}시간 전` : `${(d/86400)|0}일 전`; };
+const fmtClock = ms => { const d = new Date(ms); return d.toLocaleTimeString('ko-KR', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'}); };
+const fmtDur = ms => ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms/1000).toFixed(ms < 10000 ? 1 : 0)}s` : `${(ms/60000)|0}m${Math.round(ms%60000/1000)}s`;
+const shortId = s => (s || '').slice(0, 8);
+
+// ------------------------------------------------------------------ floor rendering
+function buildFloor() {
+  const f = $('floor'); f.innerHTML = '';
+  for (const [k, r] of Object.entries(ROOMS)) {
+    const d = document.createElement('div'); d.className = 'room'; d.id = 'room-' + k;
+    d.style.cssText = `left:${r.x}%;top:${r.y}%;width:${r.w}%;height:${r.h}%;background:var(--r-${k})`;
+    d.innerHTML = `<div class="rname">${r.ko}</div><div class="ren">${r.en}</div><div class="furn">${r.furn.split(' ').map(c => `<i class="${c === 'desk' ? '' : c}"></i>`).join('')}</div>`;
+    f.appendChild(d);
+  }
+  $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:var(--r-${k})"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join('');
+}
+function ensureChar(actor, meta) {
+  let c = S.chars[actor];
+  if (c) return c;
+  const el = document.createElement('div'); el.className = 'char';
+  let color = 'var(--c-other)', label = actor, initial = '?';
+  if (actor === 'claude') { color = 'var(--c-claude)'; label = 'Claude'; initial = 'C'; }
+  else if (actor === 'user') { color = 'var(--c-user)'; label = (S.progress && S.progress.user) ? `${S.progress.user} (나)` : '나'; initial = '나'; }
+  else { const type = (meta && meta.agentType) || ''; color = costume(type); label = type ? `${type}` : '에이전트'; initial = (type || 'A')[0].toUpperCase(); }
+  el.innerHTML = `<div class="cue"></div><div class="body" style="background:${color}">${initial}</div><div class="name">${esc(label)}</div>`;
+  $('floor').appendChild(el);
+  c = S.chars[actor] = {actor, room: actor === 'user' ? 'desk' : 'elevator', el, color, label, bubble: null, gone: false, lastKind: null, lastT: 0, busy: null};
+  return c;
+}
+function layoutChars() {
+  const byRoom = {};
+  for (const c of Object.values(S.chars)) { if (c.gone) continue; (byRoom[c.room] ||= []).push(c); }
+  for (const [room, list] of Object.entries(byRoom)) {
+    const r = ROOMS[room] || ROOMS.desk; const n = list.length;
+    list.forEach((c, i) => {
+      const fx = n === 1 ? 0.5 : 0.22 + 0.56 * (i / (n - 1));
+      const fy = room === 'desk' && c.actor === 'user' ? 0.72 : 0.56 - (i % 2) * 0.12;
+      c.el.style.left = `${r.x + r.w * fx}%`; c.el.style.top = `${r.y + r.h * fy}%`;
+    });
+  }
+  document.querySelectorAll('.room').forEach(el => el.classList.toggle('hot', !!byRoom[el.id.slice(5)] && byRoom[el.id.slice(5)].some(c => c.actor !== 'user')));
+}
+function moveTo(c, room) {
+  if (!room || c.room === room) return;
+  c.room = room; c.el.classList.add('walking'); layoutChars();
+  clearTimeout(c.walkT); c.walkT = setTimeout(() => c.el.classList.remove('walking'), 1100);
+}
+function setBubble(c, b) {
+  c.bubble = b;
+  let el = c.el.querySelector('.bubble');
+  if (!b) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); c.el.appendChild(el); }
+  el.className = 'bubble ' + (b.type || '');
+  el.innerHTML = `${b.icon ? esc(b.icon) + ' ' : ''}${esc(b.text)}<span class="el"></span>${b.type === 'err' ? '<span class="sweat">💦</span>' : ''}`;
+}
+function tickBubbles() {
+  const now = S.clock();
+  for (const c of Object.values(S.chars)) {
+    if (!c.bubble) continue;
+    const el = c.el.querySelector('.bubble .el'); if (!el) continue;
+    const b = c.bubble;
+    if (b.start && !b.end) el.textContent = `· ${fmtDur(now - b.start)}`;
+    else if (b.start && b.end) el.textContent = `· ${fmtDur(b.end - b.start)}`;
+    if (b.expire && now >= b.expire) setBubble(c, null);
+  }
+  // "고민 중": nothing has come back from the model since the last prompt / tool_done
+  const cl = S.chars.claude;
+  if (cl && !cl.gone && S.mode === 'live' && S.progress && S.progress.status === 'active' && !cl.bubble &&
+      (cl.lastKind === 'prompt' || cl.lastKind === 'tool_done') && now - cl.lastT > 1500) {
+    setBubble(cl, {type: 'think', icon: '💭', text: '고민 중', start: cl.lastT});
+  }
+}
+
+// ------------------------------------------------------------------ apply one event to the floor
+function applyEvent(e, instant) {
+  const dwell = instant ? 0 : 1;
+  const a = e.actor;
+  if (e.kind === 'session_start') { const c = ensureChar('claude'); ensureChar('user'); c.room = 'desk'; c.gone = false; layoutChars(); return; }
+  if (a === 'user') {
+    const u = ensureChar('user');
+    setBubble(u, {type: 'say', icon: e.kind === 'interrupt' ? '✋' : '⌨️', text: e.caption || '…', expire: S.clock() + (dwell ? 6000 : -1)});
+    if (!dwell) setBubble(u, null);
+    const cl = S.chars.claude; if (cl) { setBubble(cl, null); cl.lastKind = 'prompt'; cl.lastT = tsOf(e); }
+    return;
+  }
+  const c = ensureChar(a, e.meta);
+  c.lastKind = e.kind; c.lastT = tsOf(e);
+  switch (e.kind) {
+    case 'spawn':
+      c.gone = false; c.el.classList.remove('gone'); c.room = 'elevator'; layoutChars();
+      setBubble(c, {type: 'say', icon: '🛗', text: `출근: ${e.caption || ''}`, expire: S.clock() + (dwell ? 4000 : -1)});
+      break;
+    case 'finish':
+      moveTo(c, 'desk');
+      setBubble(c, {type: 'say', icon: '✅', text: e.caption || '끝났습니다', expire: S.clock() + (dwell ? 7000 : -1)});
+      clearTimeout(c.byeT);
+      c.byeT = setTimeout(() => { if (!c.gone) { setBubble(c, {type: 'say', icon: '👋', text: '퇴근합니다!'}); moveTo(c, 'elevator');
+        setTimeout(() => { c.gone = true; c.el.classList.add('gone'); layoutChars(); }, 1600); } }, dwell ? 7000 : 0);
+      if (!dwell) { c.gone = true; c.el.classList.add('gone'); }
+      break;
+    case 'say':
+      setBubble(c, {type: 'say', text: e.caption || ''}); break;
+    case 'think':
+      setBubble(c, {type: 'think', icon: '💭', text: `${fmtDur(e.dur_ms || 0)} 고민함`, expire: S.clock() + (dwell ? 2500 : -1)}); break;
+    case 'tool':
+      moveTo(c, e.room);
+      setBubble(c, {type: 'tool', icon: toolIcon(e.tool), text: e.caption || e.tool, start: tsOf(e), ref: e.ref}); break;
+    case 'tool_done':
+      if (c.bubble && c.bubble.ref === e.ref) { c.bubble.end = tsOf(e); c.bubble.expire = S.clock() + (dwell ? 2500 : -1); }
+      break;
+    case 'tool_err':
+      setBubble(c, {type: 'err', icon: '❌', text: e.caption || '오류', expire: S.clock() + (dwell ? 6000 : -1)}); break;
+    case 'interrupt':
+      setBubble(c, null); break;
+  }
+  if (!dwell && c.bubble && c.bubble.expire) setBubble(c, null);
+}
+function resetFloor() {
+  for (const c of Object.values(S.chars)) c.el.remove();
+  S.chars = {}; S.cursor = 0; ensureChar('user'); layoutChars();
+}
+
+// ------------------------------------------------------------------ right rail
+function renderProgress() {
+  const p = S.progress; if (!p) return;
+  const pr = p.progress || {}; const ratio = pr.ratio == null ? 0 : pr.ratio;
+  $('p-ratio').textContent = pr.tasksTotal ? `${pr.tasksDone}/${pr.tasksTotal} · ${Math.round(ratio * 100)}%` : '할 일 없음';
+  $('p-bar').style.width = `${Math.round(ratio * 100)}%`;
+  $('k-commits').textContent = (p.git && p.git.commits || []).length;
+  $('k-files').textContent = (p.git && p.git.filesChanged || []).length;
+  $('k-tools').textContent = (p.counters || {}).toolCalls || 0;
+  $('k-think').textContent = fmtDur((p.counters || {}).think_ms || 0).replace(/\.\d+s/, 's');
+  $('tasks').innerHTML = (p.tasks || []).map(t => `<li class="task ${esc(t.status)}"><span class="st">${t.status === 'completed' ? '✓' : ''}</span><span class="tid">#${esc(t.id)}</span><span class="tx">${esc(t.text)}</span></li>`).join('') || '<li class="note">아직 등록된 할 일이 없습니다</li>';
+  const files = (p.git && p.git.filesChanged || []).slice(0, 10);
+  const commits = (p.git && p.git.commits || []);
+  $('files').innerHTML = (commits.length ? `<span>커밋 ${commits.length}개 · 최근: ${esc(commits[commits.length - 1].msg || '')}</span>` : '<span>이 세션에서 커밋 없음</span>') + files.map(f => `<span>${esc(f)}</span>`).join('');
+  const st = $('t-status'); st.className = 'pill ' + p.status; st.innerHTML = `<span class="dot ${p.status === 'active' ? 'live' : ''}"></span><span>${({active:'LIVE', idle:`쉬는 중 · ${fmtRel(p.lastAt)}`, ended:'종료'})[p.status] || p.status}</span>`;
+}
+function renderPeople() {
+  const p = S.progress || {}; const list = [];
+  const last = {}; const counts = {};
+  for (const e of S.events.slice(0, S.mode === 'replay' ? S.cursor : S.events.length)) {
+    if (e.kind === 'tool') counts[e.actor] = (counts[e.actor] || 0) + 1;
+    if (['say', 'tool', 'think', 'spawn', 'finish', 'tool_err'].includes(e.kind)) last[e.actor] = e;
+  }
+  const row = (actor, name, color, sub) => { const e = last[actor]; const roomKo = e && e.room ? ROOMS[e.room].ko : (S.chars[actor] ? ROOMS[S.chars[actor].room].ko : '');
+    return `<div class="person"><div class="av" style="background:${color}">${esc((name[0] || '?').toUpperCase())}</div><div style="min-width:0"><div class="pn">${esc(name)}<small>${esc(sub || '')}</small></div><div class="pc">${e ? `${roomKo ? roomKo + ' · ' : ''}${esc(e.caption || e.kind)}` : '—'}</div></div><div class="pm">도구 ${counts[actor] || 0}회</div></div>`; };
+  list.push(row('claude', 'Claude', 'var(--c-claude)', shortId(S.session)));
+  for (const ag of (p.agents || [])) list.push(row('agent:' + ag.id, ag.type || '에이전트', costume(ag.type), ag.status === 'done' ? '퇴근' : '근무 중'));
+  $('people').innerHTML = list.join('');
+  $('p-count').textContent = `· ${list.length}명`;
+}
+function renderLog() {
+  const upto = S.mode === 'replay' ? S.cursor : S.events.length;
+  const rows = S.events.slice(0, upto).filter(e => !['tool_done', 'session_start'].includes(e.kind)).slice(-40).reverse();
+  $('log').innerHTML = rows.map(e => { const color = e.actor === 'claude' ? 'var(--c-claude)' : e.actor === 'user' ? 'var(--c-user)' : costume((e.meta || {}).agentType || ((S.progress || {}).agents || []).find(a => 'agent:' + a.id === e.actor)?.type);
+    const text = e.kind === 'think' ? `💭 ${fmtDur(e.dur_ms || 0)} 고민` : e.kind === 'tool' ? `${toolIcon(e.tool)} ${e.caption || e.tool}` : e.kind === 'tool_err' ? `❌ ${e.caption || ''}` : e.kind === 'spawn' ? `🛗 출근 · ${e.caption || ''}` : e.kind === 'finish' ? `👋 퇴근 · ${e.caption || ''}` : e.caption || e.kind;
+    return `<li><span class="lt">${fmtClock(tsOf(e))}</span><span class="la" style="background:${color}"></span><span class="lc ${e.kind === 'say' ? 'say' : ''}">${esc(text)}</span></li>`; }).join('') || '<li class="note">아직 활동이 없습니다</li>';
+}
+
+// ------------------------------------------------------------------ floor guide
+function renderFloors() {
+  const projects = (S.index && S.index.projects) || [];
+  $('floors').innerHTML = projects.map((p, i) => `<li class="floor-item ${p.name === S.project ? 'sel' : ''}" tabindex="0" data-p="${esc(p.name)}"><span class="floor-no">${projects.length - i}F</span><div style="min-width:0"><div class="floor-name">${esc(p.name)}</div><div class="floor-sub"><span class="dot ${p.active ? 'live' : ''}"></span>세션 ${p.sessions}개 · ${p.active ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`).join('') || '<li class="empty">아직 올라온 프로젝트가 없습니다</li>';
+  $('floors').querySelectorAll('.floor-item').forEach(el => { const go = () => selectProject(el.dataset.p); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') go(); }; });
+}
+function renderSessions() {
+  const list = (S.projectInfo && S.projectInfo.sessions) || [];
+  $('sessions').innerHTML = list.map(s => `<li class="ses-item ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="ses-id">${shortId(s.session)}</span><span class="pill ${s.status}">${s.status === 'active' ? 'LIVE' : s.status === 'ended' ? '종료' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
+  $('sessions').querySelectorAll('.ses-item').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') go(); }; });
+}
+
+// ------------------------------------------------------------------ loading & modes
+async function boot() {
+  buildFloor();
+  try { S.index = await getJSON('index.json'); } catch (e) { S.index = {projects: []}; }
+  renderFloors();
+  const first = (S.index.projects || []).find(p => p.active) || (S.index.projects || [])[0];
+  if (first) await selectProject(first.name); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
+  setInterval(tickBubbles, 500);
+  setInterval(() => { if (S.mode === 'live') { renderFloors(); renderSessions(); renderProgress(); } }, 30000);
+}
+async function selectProject(name) {
+  S.project = name; renderFloors();
+  try { S.projectInfo = await getJSON(`${name}/project.json`); } catch (e) { S.projectInfo = {sessions: []}; }
+  renderSessions();
+  const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); }
+}
+async function selectSession(ses) {
+  S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
+  $('t-project').textContent = S.project; $('t-session').textContent = shortId(ses);
+  await refresh(true);
+  clearInterval(S.pollTimer); S.pollTimer = setInterval(() => { if (S.mode === 'live') refresh(false); }, POLL_MS);
+}
+async function refresh(full) {
+  let progress = null, events = [];
+  try { progress = await getJSON(`${S.project}/${S.session}.progress.json`); } catch (e) { /* keep old */ }
+  try { events = await getEvents(`${S.project}/${S.session}.events.jsonl`); } catch (e) { events = S.events; }
+  if (progress) S.progress = progress;
+  const known = S.events.length;
+  S.events = events;
+  if (full || known === 0) { resetFloor(); for (const e of events) applyEvent(e, true); S.cursor = events.length; }
+  else { const fresh = events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 350)); S.cursor = events.length; }
+  renderProgress(); renderPeople(); renderLog(); layoutChars();
+  if (S.events.length) { const cl = S.chars.claude; const last = S.events[S.events.length - 1]; if (cl && !['tool', 'say'].includes(last.kind)) { cl.lastKind = last.kind === 'prompt' ? 'prompt' : 'tool_done'; cl.lastT = tsOf(last); } }
+}
+
+// ---- replay: virtual clock, gaps capped so a quiet hour does not take a minute
+function startReplay() {
+  if (!S.events.length) return;
+  stopReplay(); S.mode = 'replay'; $('b-live').classList.remove('on'); $('b-replay').classList.add('on'); $('scrub').hidden = false;
+  resetFloor(); const r = S.replay; r.speed = +$('speed').value; r.vt = tsOf(S.events[0]); r.last = performance.now();
+  S.clock = () => r.vt;
+  $('s-range').max = S.events.length; $('s-range').value = 0;
+  r.timer = setInterval(stepReplay, 100);
+}
+function stepReplay() {
+  const r = S.replay; const now = performance.now(); const dt = (now - r.last) * r.speed; r.last = now;
+  const next = S.events[S.cursor];
+  if (!next) { stopReplay(true); return; }
+  const target = tsOf(next);
+  r.vt = Math.min(r.vt + dt, Math.max(target, r.vt + Math.min(dt, 2000 * r.speed / 60)));  // cap long gaps at ~2s real time
+  if (r.vt < target) { $('s-time').textContent = fmtClock(r.vt); return; }
+  while (S.cursor < S.events.length && tsOf(S.events[S.cursor]) <= r.vt) { applyEvent(S.events[S.cursor], false); S.cursor++; }
+  $('s-range').value = S.cursor; $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt);
+  renderPeople(); renderLog();
+}
+function stopReplay(finished) {
+  const r = S.replay; clearInterval(r.timer); r.timer = null; S.clock = () => Date.now();
+  if (finished) { $('b-replay').classList.remove('on'); $('s-count').textContent = `${S.events.length}/${S.events.length} · 끝`; }
+}
+function seekReplay(n) {
+  const r = S.replay; resetFloor(); S.cursor = 0;
+  for (let i = 0; i < n; i++) { applyEvent(S.events[i], true); S.cursor++; }
+  r.vt = n ? tsOf(S.events[n - 1]) : tsOf(S.events[0]); r.last = performance.now();
+  $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt); renderPeople(); renderLog();
+}
+$('b-live').onclick = () => { if (S.mode === 'live') return; stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true; refresh(true); };
+$('b-replay').onclick = () => startReplay();
+$('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
+$('s-range').oninput = ev => { if (S.mode === 'replay') seekReplay(+ev.target.value); };
+
+boot();
+})();
+</script>
+<!--OFFICE:INNER-END-->
+</body>
+</html>
