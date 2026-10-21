@@ -12,14 +12,15 @@
 #   OFFICE_DATA_DIR   where data files are written (default: ~/.agent-office/data)
 #   OFFICE_PROJECT    floor name (default: basename of the session cwd)
 #   OFFICE_USER       who is running (default: $USER)
-#   OFFICE_PUSH_EVERY seconds between pushes (default 60; 0 disables the pusher)
+#   OFFICE_PUSH_EVERY longest wait between pushes while busy (default 180; 0 disables the pusher).
+#                     Pushes are event-driven: a quiet 20s after new records, or MAX seconds, never while idle.
 #   OFFICE_PUSH=0     disable pushing even if OFFICE_DATA_REPO is set
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OFFICE_SRC="${OFFICE_SRC:-$(dirname "$HERE")}"
 OFFICE_DATA_DIR="${OFFICE_DATA_DIR:-$HOME/.agent-office/data}"
-OFFICE_PUSH_EVERY="${OFFICE_PUSH_EVERY:-60}"
+OFFICE_PUSH_EVERY="${OFFICE_PUSH_EVERY:-180}"
 LOG_DIR="${OFFICE_DATA_DIR%/}"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/.office-start.log"
 

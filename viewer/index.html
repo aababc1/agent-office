@@ -662,7 +662,7 @@ function syncOverlay() {
   }
   // inferred "고민 중" while the model is working and nothing has come back yet
   const cl = S.chars.claude;
-  if (cl && !cl.gone && !cl.bubble && S.mode === 'live' && S.progress && S.progress.status === 'active' && (cl.lastKind === 'prompt' || cl.lastKind === 'tool_done') && now - cl.lastT > 1500) {
+  if (cl && !cl.gone && !cl.bubble && S.mode === 'live' && S.progress && liveStatus(S.progress) === 'active' && (cl.lastKind === 'prompt' || cl.lastKind === 'tool_done') && now - cl.lastT > 1500) {
     setBubble(cl, {type: 'think', icon: '💭', text: '고민 중', start: cl.lastT}); cl.pose = 'think'; cl.poseUntil = Infinity;
   }
 }
@@ -720,6 +720,7 @@ function leaveOffice(c) {
 function resetFloor() { for (const c of Object.values(S.chars)) { if (c.leaving) clearTimeout(c.leaving); } S.chars = {}; S.cursor = 0; S.elev = {open: 0, target: 0, lit: 0}; ensureChar('user'); }
 
 // ================================================================ panels
+const liveStatus = (p, now = Date.now()) => p.status === 'ended' ? 'ended' : (now - Date.parse(p.lastAt || 0) < 120e3 ? 'active' : 'idle');   // the file's status can be stale: no push while idle
 function renderProgress() {
   const p = S.progress; if (!p) return;
   const pr = p.progress || {}; const ratio = pr.ratio == null ? 0 : pr.ratio;
@@ -732,7 +733,7 @@ function renderProgress() {
   $('tasks').innerHTML = (p.tasks || []).map(t => `<li class="task ${esc(t.status)}"><span class="st">${t.status === 'completed' ? '✓' : ''}</span><span class="tid">#${esc(t.id)}</span><span class="tx">${esc(t.text)}</span></li>`).join('') || '<li class="note">아직 등록된 할 일이 없습니다</li>';
   const files = (p.git && p.git.filesChanged || []).slice(0, 10); const commits = (p.git && p.git.commits || []);
   $('files').innerHTML = (commits.length ? `<span>커밋 ${commits.length}개 · 최근: ${esc(commits[commits.length - 1].msg || '')}</span>` : '<span>이 세션에서 커밋 없음</span>') + files.map(f => `<span>${esc(f)}</span>`).join('');
-  const st = $('t-status'); st.className = 'pill ' + p.status; st.innerHTML = `<span class="lamp ${p.status === 'active' ? 'on' : ''}"></span><span>${({active: 'LIVE', idle: '쉬는 중', ended: '종료'})[p.status] || p.status}</span>`;
+  const live = liveStatus(p); const st = $('t-status'); st.className = 'pill ' + live; st.innerHTML = `<span class="lamp ${live === 'active' ? 'on' : ''}"></span><span>${({active: 'LIVE', idle: `쉬는 중 · ${fmtRel(p.lastAt)}`, ended: '종료'})[live] || live}</span>`;
   $('r-project').textContent = S.project || '—'; $('r-session').textContent = S.session || '—'; $('r-last').textContent = `${fmtRel(p.lastAt)} · ${(p.versions || []).join(', ')}`;
 }
 function renderPeople() {
@@ -759,7 +760,7 @@ function renderLog() {
 }
 function renderFloors() {
   const projects = (S.index && S.index.projects) || []; const N = projects.length;
-  $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0; const key = p.key || p.name;
+  $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || (MODE === 'github' && !GHUB.token ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
@@ -767,7 +768,7 @@ function renderFloors() {
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
   $('ses-n').textContent = list.length ? `${list.length}개` : '';
-  $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${s.status === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
+  $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
   $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderLegend() { $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:${floorFill(ROOMS[k].floor)}"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join(''); }
@@ -787,7 +788,7 @@ async function boot() {
   setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
   let last = performance.now();
   (function loop(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; tickChars(dt); render(); syncOverlay(); requestAnimationFrame(loop); })(last);
-  setInterval(() => { if (S.mode === 'live') renderPeople(); }, 1000);
+  setInterval(() => { if (S.mode === 'live') { renderPeople(); if (S.progress) renderProgress(); } }, 1000);
 }
 async function loadIndex() {
   if (MODE === 'github') { if (!GHUB.token) { S.index = {projects: []}; return; } try { S.index = {projects: await ghFloors()}; } catch (e) { S.index = {projects: []}; } return; }
@@ -809,7 +810,7 @@ async function followLatest() {
   try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { return; }
   renderSessions();
   const newest = (S.projectInfo.sessions || [])[0];
-  if (newest && newest.session !== S.session && (newest.status === 'active' || !(S.progress && S.progress.status === 'active'))) await selectSession(newest.session);
+  if (newest && newest.session !== S.session && (liveStatus(newest) === 'active' || !(S.progress && liveStatus(S.progress) === 'active'))) await selectSession(newest.session);
 }
 async function selectProject(key, no, showIndicator) {
   const floor = (S.index.projects || []).find(p => (p.key || p.name) === key) || {name: key};

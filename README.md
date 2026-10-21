@@ -66,8 +66,10 @@ python3 -m pytest tests -q
 OFFICE_DATA_REPO=https://github.com/<you>/agent-office-data.git   # 있으면 clone + 1분마다 push
 OFFICE_PROJECT=<층 이름>        # 기본: 세션 cwd의 basename
 OFFICE_USER=<이름>              # 기본: $USER
-OFFICE_PUSH_EVERY=60            # 0이면 push 안 함
+OFFICE_PUSH_EVERY=180           # 바쁠 때 push 사이 최대 간격(초). 0이면 push 안 함
 ```
+
+push는 타이머가 아니라 **사건 기준**이다: 새 기록이 생기고 20초 조용해지면(턴이 끝난 직후) push, 계속 바쁘면 180초마다, 쉬는 동안은 0회. 뷰어의 "쉬는 중"은 마지막 기록 시각으로 계산하므로 하트비트 push가 없다.
 
 `office-start.sh`는 훅 JSON(stdin)의 `transcript_path`를 쓰고, 훅이 아니면 `~/.claude/projects/*/*.jsonl` 중 가장 최근 파일을 집는다. 즉시 반환하고 추출기·푸셔는 detach된 채 세션이 끝날 때까지 돈다.
 
