@@ -12,7 +12,7 @@ run_worker_first = ["/api/*", "/auth/*", "/ws/*", "/ingest/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "agent-office"
-database_id = "00000000-0000-0000-0000-000000000000"   # wrangler d1 create agent-office → paste the id (any value works for --local)
+database_id = "7f4eff21-0fb8-4745-81a5-33b5c9cdb876"   # wrangler d1 create agent-office → paste the id (any value works for --local)
 
 [[durable_objects.bindings]]
 name = "FLOOR"
