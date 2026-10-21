@@ -114,3 +114,11 @@ allow-list 방식이다. 밖으로 나가는 문자열은 캡션뿐이고, 캡�
 2. **kbds 배포**: VM에 뷰어 + cron pull. 포트/프록시 가능 여부 확인
 3. **Drive 어댑터**: 팀원이 올린 자료·댓글을 "자료함" 이벤트로 바꿔 사무실에 띄우기 (Slack 없이 Drive 파일 댓글 + 의견 Doc)
 4. 진행도 고도화: Jira/이슈 키 연결, 프로젝트 타임라인
+
+## 폰에서 보기 (PWA)
+
+`viewer/`에는 `manifest.webmanifest`, `sw.js`, `icons/`가 같이 있다. https로 호스팅되면 iPhone·Android에서 "홈 화면에 추가"로 앱처럼 열리고, 마지막 상태가 캐시돼 오프라인에서도 직전 사무실이 먼저 뜬다. 760px 이하에서는 사무실이 화면 폭 전체를 쓰고(핀치 줌·드래그), 진행도/사람/로그/층은 아래 탭으로 바뀐다. ◎ 버튼은 Claude 위치로 화면을 옮긴다.
+
+## 프로젝트별 접근 권한
+
+접근 권한 단위가 프로젝트라서 **data repo는 프로젝트당 하나**다(`OFFICE_DATA_REPO`가 프로젝트마다 다름). 참여자 = 그 repo의 collaborator. 뷰어 로그인은 Cloudflare Pages + Access(이메일 코드/Google 로그인, 참여자 이메일 목록) 또는 GitHub 로그인 중 선택. 권한 없는 층은 이름만 보이고 잠긴다.

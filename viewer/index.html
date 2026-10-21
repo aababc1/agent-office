@@ -6,6 +6,14 @@
 <!--OFFICE:INNER-START-->
 <title>Agent Office</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<!--OFFICE:PWA-START-->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1B2430">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Office">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!--OFFICE:PWA-END-->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
 <style>
 /* Layout: department-store floor guide | isometric office (canvas + HTML bubbles) | site log rail.
@@ -38,7 +46,16 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);f
 button,select,label{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:250px minmax(0,1fr) 320px;gap:12px;min-height:100%}
 @media (max-width:1180px){.app{grid-template-columns:220px minmax(0,1fr)} .rail{grid-column:1/-1}}
-@media (max-width:760px){.app{grid-template-columns:minmax(0,1fr)} .guide,.rail{grid-column:auto}}
+.tabs{display:none}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr);gap:10px} .guide,.rail{grid-column:auto;display:contents}
+  .main{order:-2} .tabs{order:-1;display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+  .tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px 4px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+  .tabs button.on{background:var(--accent);color:var(--accent-ink)}
+  .guide .card,.rail .card{display:none}
+  .app[data-tab="progress"] .card[data-tab="progress"],.app[data-tab="people"] .card[data-tab="people"],.app[data-tab="log"] .card[data-tab="log"],.app[data-tab="floors"] .card[data-tab="floors"]{display:block}
+  .topbar .title{font-size:14px} .controls{margin-left:0;width:100%}
+}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
 h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 12px 6px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
 h2 .n{font-family:var(--mono);font-weight:400;letter-spacing:0;text-transform:none}
@@ -83,8 +100,8 @@ h2 .n{font-family:var(--mono);font-weight:400;letter-spacing:0;text-transform:no
 select.btn{padding:4px 6px}
 .scrub{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-family:var(--mono);font-size:11px;color:var(--muted)}
 .scrub input{flex:1;min-width:0;accent-color:var(--accent)}
-.stage{position:relative;margin:0 12px 12px;height:620px;max-height:72vh;border-radius:10px;overflow:hidden;background:var(--stage);border:1px solid var(--line);touch-action:none}
-@media (max-width:760px){.stage{height:460px}}
+.stage{position:relative;margin:0 12px 12px;height:620px;max-height:72vh;overscroll-behavior:contain;border-radius:10px;overflow:hidden;background:var(--stage);border:1px solid var(--line);touch-action:none}
+@media (max-width:760px){.stage{height:58vh;min-height:360px;margin:0 8px 8px}}
 .stage canvas{display:block;width:100%;height:100%}
 .overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .zoom{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:column;gap:4px}
@@ -149,14 +166,17 @@ select.btn{padding:4px 6px}
 </head>
 <body>
 <!--OFFICE:BODY-START-->
-<div class="app">
+<div class="app" id="app" data-tab="progress">
+  <nav class="tabs" aria-label="패널">
+    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="log">로그</button><button type="button" data-t="floors">층</button>
+  </nav>
   <aside class="guide">
-    <section class="card">
+    <section class="card" data-tab="floors">
       <h2>층별 안내 <span class="n">FLOOR GUIDE</span></h2>
       <ul class="floors" id="floors"></ul>
       <label class="follow"><input type="checkbox" id="follow" checked> 최근 세션 자동으로 따라가기</label>
     </section>
-    <section class="card">
+    <section class="card" data-tab="floors">
       <h2>이 층의 세션 <span class="n" id="ses-n"></span></h2>
       <ul class="sessions" id="sessions"></ul>
     </section>
@@ -178,16 +198,16 @@ select.btn{padding:4px 6px}
       <div class="stage" id="stage">
         <canvas id="iso"></canvas>
         <div class="overlay" id="overlay"></div>
-        <div class="zoom"><button class="btn" id="z-in" type="button" aria-label="확대">+</button><button class="btn" id="z-out" type="button" aria-label="축소">−</button><button class="btn" id="z-fit" type="button" aria-label="맞춤" style="font-size:11px">⟲</button></div>
+        <div class="zoom"><button class="btn" id="z-in" type="button" aria-label="확대">+</button><button class="btn" id="z-out" type="button" aria-label="축소">−</button><button class="btn" id="z-fit" type="button" aria-label="전체 보기" style="font-size:11px">⟲</button><button class="btn" id="z-me" type="button" aria-label="Claude 위치로" style="font-size:13px">◎</button></div>
       </div>
     </section>
   </main>
 
   <aside class="rail">
-    <section class="card">
+    <section class="card" data-tab="progress">
       <div class="kv"><span class="k">프로젝트</span><span class="v" id="r-project">—</span><span class="k">세션</span><span class="v" id="r-session">—</span><span class="k">마지막</span><span class="v" id="r-last">—</span></div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="progress">
       <h2>진행도 <span class="n" id="p-ratio"></span></h2>
       <div class="sec"><div class="bar"><i id="p-bar" style="width:0%"></i></div></div>
       <div class="kpi">
@@ -197,23 +217,23 @@ select.btn{padding:4px 6px}
         <div><div class="v" id="k-think">0s</div><div class="k">thinking</div></div>
       </div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="people">
       <h2>사무실 사람들 <span class="n" id="p-count"></span></h2>
       <div class="sec people" id="people"></div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="progress">
       <h2>할 일 목록</h2>
       <div class="sec"><ul class="tasks" id="tasks"></ul></div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="log">
       <h2>활동 로그</h2>
       <div class="sec"><ul class="log" id="log"></ul></div>
     </section>
-    <section class="card">
+    <section class="card" data-tab="floors">
       <h2>어디서 무엇을 하나</h2>
       <div class="legend" id="legend"></div>
     </section>
@@ -337,7 +357,10 @@ function fitCamera() {
   const minY = Math.min(...corners.map(c => c.y)), maxY = Math.max(...corners.map(c => c.y)) + 24;
   cam.fitZ = Math.min((W - 24) / (maxX - minX), (H - 24) / (maxY - minY));
   cam.z = cam.fitZ * 1.12; cam.ox = W / 2 - ((minX + maxX) / 2) * cam.z; cam.oy = H / 2 - ((minY + maxY) / 2) * cam.z;
+  if (W < 600) { cam.z = cam.fitZ * 1.9; centerOn(11, 8.5); }          // phones: closer, on the middle of the floor
 }
+function centerOn(gx, gy) { const W = stage.clientWidth, H = stage.clientHeight; const p = P(gx, gy, 20); cam.ox = W / 2 - p.x * cam.z; cam.oy = H / 2 - p.y * cam.z; }
+function followClaude() { const c = S.chars.claude; if (c) centerOn(c.gx, c.gy); }
 function resize() {
   const dpr = window.devicePixelRatio || 1; const W = stage.clientWidth, H = stage.clientHeight;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
@@ -346,12 +369,20 @@ function resize() {
 new ResizeObserver(() => { resize(); fitCamera(); }).observe(stage);
 const zoomBy = f => { const W = stage.clientWidth / 2, H = stage.clientHeight / 2; const nz = clamp(cam.z * f, cam.fitZ * 0.6, cam.fitZ * 2.6);
   cam.ox = W - (W - cam.ox) * (nz / cam.z); cam.oy = H - (H - cam.oy) * (nz / cam.z); cam.z = nz; };
-$('z-in').onclick = () => zoomBy(1.2); $('z-out').onclick = () => zoomBy(1 / 1.2); $('z-fit').onclick = fitCamera;
-let drag = null;
-stage.addEventListener('pointerdown', e => { if (e.target.closest('.zoom')) return; drag = {x: e.clientX, y: e.clientY, ox: cam.ox, oy: cam.oy}; stage.setPointerCapture(e.pointerId); });
-stage.addEventListener('pointermove', e => { if (!drag) return; cam.ox = drag.ox + e.clientX - drag.x; cam.oy = drag.oy + e.clientY - drag.y; });
-stage.addEventListener('pointerup', () => drag = null); stage.addEventListener('pointercancel', () => drag = null);
-stage.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, {passive: false});
+$('z-in').onclick = () => zoomBy(1.2); $('z-out').onclick = () => zoomBy(1 / 1.2); $('z-fit').onclick = fitCamera; $('z-me').onclick = () => followClaude();
+let drag = null; const ptrs = new Map(); let pinch = null;
+const zoomAt = (f, px, py) => { const nz = clamp(cam.z * f, cam.fitZ * 0.6, cam.fitZ * 3); cam.ox = px - (px - cam.ox) * (nz / cam.z); cam.oy = py - (py - cam.oy) * (nz / cam.z); cam.z = nz; };
+stage.addEventListener('pointerdown', e => { if (e.target.closest('.zoom')) return; stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = {d: Math.hypot(a.x - b.x, a.y - b.y), z: cam.z, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, ox: cam.ox, oy: cam.oy}; drag = null; }
+  else if (ptrs.size === 1) drag = {x: e.clientX, y: e.clientY, ox: cam.ox, oy: cam.oy}; });
+stage.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY}); const r = stage.getBoundingClientRect();
+  if (pinch && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const nz = clamp(pinch.z * (d / pinch.d), cam.fitZ * 0.6, cam.fitZ * 3); const px = pinch.mx - r.left, py = pinch.my - r.top;
+    cam.ox = px - (px - pinch.ox) * (nz / pinch.z) + (mx - pinch.mx); cam.oy = py - (py - pinch.oy) * (nz / pinch.z) + (my - pinch.my); cam.z = nz; return; }
+  if (drag) { cam.ox = drag.ox + e.clientX - drag.x; cam.oy = drag.oy + e.clientY - drag.y; } });
+const endPtr = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (ptrs.size === 0) drag = null; if (ptrs.size === 1) { const [p] = [...ptrs.values()]; drag = {x: p.x, y: p.y, ox: cam.ox, oy: cam.oy}; } };
+stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
+stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top); }, {passive: false});
 
 // ================================================================ drawing primitives
 function poly(pts, fill, stroke) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
@@ -757,9 +788,13 @@ $('b-replay').onclick = () => startReplay();
 $('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
 $('s-range').oninput = ev => { if (S.mode === 'replay') seekReplay(+ev.target.value); };
 
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { $('app').dataset.tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); });
 boot();
 })();
 </script>
+<!--OFFICE:PWA-START-->
+<script>if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) { navigator.serviceWorker.register('sw.js').catch(() => {}); }</script>
+<!--OFFICE:PWA-END-->
 <!--OFFICE:INNER-END-->
 </body>
 </html>

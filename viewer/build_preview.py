@@ -45,6 +45,8 @@ def main() -> int:
         inner = html[start:end]
         inner = inner.replace("<!--OFFICE:HEAD-END-->\n</head>\n<body>\n<!--OFFICE:BODY-START-->\n", "")
         html = inner.replace("<!--OFFICE:BODY-START-->", "")
+        import re as _re
+        html = _re.sub(r"<!--OFFICE:PWA-START-->.*?<!--OFFICE:PWA-END-->\n?", "", html, flags=_re.S)
         html = html.replace("</style>\n", "</style>\n" + inject, 1)
     else:
         html = html.replace("<!--OFFICE:BODY-START-->\n", inject, 1)
