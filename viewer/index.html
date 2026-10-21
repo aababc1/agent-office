@@ -212,7 +212,7 @@ select.btn{padding:4px 6px}
 
   <aside class="rail">
     <section class="card" data-tab="progress">
-      <div class="kv"><span class="k">프로젝트</span><span class="v" id="r-project">—</span><span class="k">세션</span><span class="v" id="r-session">—</span><span class="k">마지막</span><span class="v" id="r-last">—</span></div>
+      <div class="kv"><span class="k">프로젝트</span><span class="v" id="r-project">—</span><span class="k">세션</span><span class="v" id="r-session">—</span><span class="k">마지막</span><span class="v" id="r-last">—</span><span class="k">추출기</span><span class="v" id="r-emitter">—</span></div>
     </section>
     <section class="card" data-tab="progress">
       <h2>진행도 <span class="n" id="p-ratio"></span></h2>
@@ -298,6 +298,10 @@ async function ghRepos() {        // every data repo this person can read throug
 async function ghFloors() {       // one repo may hold one project (usual) or several; registry entries we cannot read are shown locked
   const repos = await ghRepos(); const floors = [];
   for (const r of repos) {
+    let sum = null;
+    try { sum = JSON.parse(await ghFetch(`/repos/${r.repo}/contents/summary.json`, true)); } catch (e) { /* older layout below */ }
+    if (sum) { floors.push({name: sum.name, description: sum.description, sessions: (sum.sessions || {}).total || 0, active: (sum.sessions || {}).active || 0,
+      lastAt: sum.lastAt, emitterAt: sum.emitterAt, alerts: sum.alerts || [], latest: (sum.sessions || {}).latest, repo: r.repo, key: `${r.repo}::${sum.name}`}); continue; }
     let idx; try { idx = JSON.parse(await ghFetch(`/repos/${r.repo}/contents/index.json`, true)); } catch (e) { continue; }   // not an office data repo
     for (const p of idx.projects || []) floors.push({...p, repo: r.repo, key: `${r.repo}::${p.name}`});
   }
@@ -735,6 +739,8 @@ function renderProgress() {
   $('files').innerHTML = (commits.length ? `<span>커밋 ${commits.length}개 · 최근: ${esc(commits[commits.length - 1].msg || '')}</span>` : '<span>이 세션에서 커밋 없음</span>') + files.map(f => `<span>${esc(f)}</span>`).join('');
   const live = liveStatus(p); const st = $('t-status'); st.className = 'pill ' + live; st.innerHTML = `<span class="lamp ${live === 'active' ? 'on' : ''}"></span><span>${({active: 'LIVE', idle: `쉬는 중 · ${fmtRel(p.lastAt)}`, ended: '종료'})[live] || live}</span>`;
   $('r-project').textContent = S.project || '—'; $('r-session').textContent = S.session || '—'; $('r-last').textContent = `${fmtRel(p.lastAt)} · ${(p.versions || []).join(', ')}`;
+  const fl = (S.index.projects || []).find(x => (x.key || x.name) === (S.floorKey || S.project)); const em = fl && fl.emitterAt ? Date.parse(fl.emitterAt) : 0;
+  $('r-emitter').textContent = em ? (Date.now() - em < 45 * 60e3 ? `살아 있음 · ${fmtRel(fl.emitterAt)}` : `신호 없음 · ${fmtRel(fl.emitterAt)}`) : '—';
 }
 function renderPeople() {
   const p = S.progress || {}; const upto = S.mode === 'replay' ? S.cursor : S.events.length;
@@ -762,13 +768,14 @@ function renderFloors() {
   const projects = (S.index && S.index.projects) || []; const N = projects.length;
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || (MODE === 'github' && !GHUB.token ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+    const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || (MODE === 'github' && !GHUB.token ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
   $('ses-n').textContent = list.length ? `${list.length}개` : '';
-  $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
+  $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.title || s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
   $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderLegend() { $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:${floorFill(ROOMS[k].floor)}"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join(''); }
@@ -807,7 +814,7 @@ async function followLatest() {
   if (!$('follow').checked) return;
   const projects = (S.index.projects || []).filter(p => !p.locked); const active = projects.find(p => p.active);
   if (active && (active.key || active.name) !== (S.floorKey || S.project)) { await selectProject(active.key || active.name, (S.index.projects || []).length - (S.index.projects || []).indexOf(active), true); return; }
-  try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { return; }
+  try { S.projectInfo = await getJSON('project.json'); } catch (e) { return; }
   renderSessions();
   const newest = (S.projectInfo.sessions || [])[0];
   if (newest && newest.session !== S.session && (liveStatus(newest) === 'active' || !(S.progress && liveStatus(S.progress) === 'active'))) await selectSession(newest.session);
@@ -816,7 +823,7 @@ async function selectProject(key, no, showIndicator) {
   const floor = (S.index.projects || []).find(p => (p.key || p.name) === key) || {name: key};
   S.project = floor.name; S.repo = floor.repo || null; S.floorKey = key; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
-  try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { S.projectInfo = {sessions: []}; }
+  try { S.projectInfo = await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
   const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
@@ -828,8 +835,8 @@ async function selectSession(ses) {
 }
 async function refresh(full) {
   let progress = null, events = null;
-  try { progress = await getJSON(`${S.project}/${S.session}.progress.json`); } catch (e) { /* keep */ }
-  try { events = await getEvents(`${S.project}/${S.session}.events.jsonl`); } catch (e) { events = S.events; }
+  try { progress = await getJSON(`sessions/${S.session}.progress.json`); } catch (e) { /* keep */ }
+  try { events = await getEvents(`sessions/${S.session}.events.jsonl`); } catch (e) { events = S.events; }
   if (progress) S.progress = progress;
   const known = S.events.length; S.events = events || [];
   if (full || known === 0 || S.events.length < known) { resetFloor(); for (const e of S.events) applyEvent(e, true); S.cursor = S.events.length; }

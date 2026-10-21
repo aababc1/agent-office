@@ -179,13 +179,15 @@ class SessionTracker:
         return full
 
     # ---- output --------------------------------------------------------
+    # One data dir = one project (= one data repo):
+    #   project.json  summary.json  index.json  sessions/<id>.events.jsonl  sessions/<id>.progress.json
     def _write(self, events: list[dict[str, Any]]) -> None:
-        proj_dir = os.path.join(self.out_dir, self.project)
-        os.makedirs(proj_dir, exist_ok=True)
+        ses_dir = os.path.join(self.out_dir, "sessions")
+        os.makedirs(ses_dir, exist_ok=True)
         mode = "a"
         if self.progress is None:
             self.progress = ProgressModel(self.project, self.session, self.user)
-            self._events_path = os.path.join(proj_dir, f"{self.session}.events.jsonl")
+            self._events_path = os.path.join(ses_dir, f"{self.session}.events.jsonl")
             mode = "w"                                # a (re)start re-derives from the transcript
         self.progress.versions = list(self.parser.versions)
         events.sort(key=lambda e: e["t"])             # stable: main/agent interleave by time
@@ -195,36 +197,71 @@ class SessionTracker:
                 self._seq += 1
                 self.progress.apply(ev)
                 f.write(json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n")
-        _atomic_json(os.path.join(proj_dir, f"{self.session}.progress.json"), self.progress.snapshot())
-        self._write_indexes(proj_dir)
+        _atomic_json(os.path.join(ses_dir, f"{self.session}.progress.json"), self.progress.snapshot())
+        self._mark_running()
+        self._write_indexes()
 
-    def _write_indexes(self, proj_dir: str) -> None:
-        sessions = []
-        for p in sorted(glob.glob(os.path.join(proj_dir, "*.progress.json"))):
+    def _mark_running(self) -> None:
+        """Tells the pusher a live emitter is attached (it heartbeats while this file exists)."""
+        try:
+            with open(os.path.join(self.out_dir, ".office-running"), "w", encoding="utf-8") as f:
+                json.dump({"kind": "session", "session": self.session, "project": self.project, "at": iso(time.time())}, f)
+        except OSError:
+            pass
+
+    def stop(self) -> None:
+        try:
+            os.remove(os.path.join(self.out_dir, ".office-running"))
+        except OSError:
+            pass
+
+    def _write_indexes(self) -> None:
+        sessions, errors = [], []
+        for p in sorted(glob.glob(os.path.join(self.out_dir, "sessions", "*.progress.json"))):
             try:
                 with open(p, encoding="utf-8") as f:
                     s = json.load(f)
-                sessions.append({"session": s["session"], "status": s["status"], "lastAt": s["lastAt"],
-                                 "startedAt": s["startedAt"], "progress": s.get("progress"),
-                                 "last": (s.get("last") or {}).get("caption")})
+                sessions.append({"session": s["session"], "title": s.get("title"), "status": s["status"], "lastAt": s["lastAt"],
+                                 "startedAt": s["startedAt"], "progress": s.get("progress"), "user": s.get("user"),
+                                 "counters": s.get("counters"), "last": (s.get("last") or {}).get("caption")})
+                for e in s.get("recentErrors") or []:
+                    errors.append({"kind": "tool_err", "session": s["session"], **e})
             except (OSError, KeyError, json.JSONDecodeError):
                 continue
         sessions.sort(key=lambda s: s.get("lastAt") or "", reverse=True)
-        _atomic_json(os.path.join(proj_dir, "project.json"),
-                     {"v": 1, "name": self.project, "sessions": sessions,
-                      "lastAt": sessions[0]["lastAt"] if sessions else None})
-        projects = []
-        for p in sorted(glob.glob(os.path.join(self.out_dir, "*", "project.json"))):
-            try:
-                with open(p, encoding="utf-8") as f:
-                    pj = json.load(f)
-                projects.append({"name": pj["name"], "sessions": len(pj["sessions"]), "lastAt": pj.get("lastAt"),
-                                 "active": sum(1 for s in pj["sessions"] if s.get("status") == "active")})
-            except (OSError, KeyError, json.JSONDecodeError):
-                continue
-        projects.sort(key=lambda p: p.get("lastAt") or "", reverse=True)
+        now = time.time()
+        latest = sessions[0] if sessions else None
+        desc = os.environ.get("OFFICE_DESC") or self._read_desc()
+        project = {"v": 1, "name": self.project, "description": desc, "sessions": sessions,
+                   "lastAt": latest["lastAt"] if latest else None}
+        _atomic_json(os.path.join(self.out_dir, "project.json"), project)
+        active = [s for s in sessions if s.get("status") == "active"]
+        summary = {
+            "v": 1, "name": self.project, "description": desc,
+            "lastAt": latest["lastAt"] if latest else None,
+            "emitterAt": iso(now),
+            "status": "active" if active else ("idle" if sessions else "empty"),
+            "sessions": {"total": len(sessions), "active": len(active),
+                         "latest": {k: latest.get(k) for k in ("session", "title", "lastAt", "status")} if latest else None},
+            "progress": latest.get("progress") if latest else None,
+            "git": {"commits": sum(len((json.load(open(p, encoding="utf-8")).get("git") or {}).get("commits") or [])
+                                   for p in glob.glob(os.path.join(self.out_dir, "sessions", "*.progress.json")))},
+            "alerts": sorted(errors, key=lambda e: e.get("t") or "", reverse=True)[:10],
+            "pipeline": None,
+        }
+        _atomic_json(os.path.join(self.out_dir, "summary.json"), summary)
+        # index.json: kept for the static viewer / embedded previews (a dir still "lists" its one project)
         _atomic_json(os.path.join(self.out_dir, "index.json"),
-                     {"v": 1, "generatedAt": iso(time.time()), "projects": projects})
+                     {"v": 1, "generatedAt": iso(now),
+                      "projects": [{"name": self.project, "sessions": len(sessions), "lastAt": project["lastAt"],
+                                    "active": len(active), "description": desc, "emitterAt": iso(now)}]})
+
+    def _read_desc(self) -> str | None:
+        try:
+            with open(os.path.join(self.out_dir, "project.json"), encoding="utf-8") as f:
+                return json.load(f).get("description")
+        except (OSError, json.JSONDecodeError):
+            return None
 
 
 def _atomic_json(path: str, data: Any) -> None:

@@ -16,6 +16,8 @@ _SYSTEM_BLOCK = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 _XML_TAG = re.compile(r"</?(?:antml:)?[A-Za-z_][\w:-]{0,40}(?:\s[^<>]{0,200})?/?>")
 _MD_NOISE = re.compile(r"(^|\n)\s*(#{1,6}\s+|[-*]\s+|\d+\.\s+)")
 _WS = re.compile(r"\s+")
+_MD_LINK = re.compile(r"\[([^\]]{0,120})\]\((?:https?://|mailto:)[^)]*\)")
+_URL = re.compile(r"https?://\S+")
 
 # Order matters: specific tokens first, generic key=value last.
 _SECRET_PATTERNS = [
@@ -43,6 +45,8 @@ def clean_text(text: str, limit: int = CAPTION_MAX) -> str:
         return ""
     text = _SYSTEM_BLOCK.sub(" ", text)
     text = _XML_TAG.sub(" ", text)
+    text = _MD_LINK.sub(r"\1", text)          # [label](https://…) → label
+    text = _URL.sub("🔗", text)                # bare links carry no meaning in a bubble
     text = _MD_NOISE.sub(r"\1", text)
     text = _WS.sub(" ", text).strip()
     text = mask_secrets(text)

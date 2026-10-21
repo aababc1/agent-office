@@ -33,6 +33,8 @@ class ProgressModel:
         "prompts": 0, "say": 0, "think_ms": 0, "toolCalls": 0, "errors": 0, "agents": 0, "interrupts": 0})
     rooms: dict[str, int] = field(default_factory=dict)
     last: dict[str, Any] | None = None
+    title: str | None = None
+    recent_errors: list[dict[str, Any]] = field(default_factory=list)
     _next_task_id: int = 1
     _pending_create: list[str] = field(default_factory=list)
 
@@ -60,6 +62,8 @@ class ProgressModel:
         meta = ev.get("meta") or {}
         if kind == "prompt":
             self.counters["prompts"] += 1
+            if self.title is None and ev.get("caption"):
+                self.title = str(ev["caption"])[:60].rstrip(" …")
         elif kind == "say":
             self.counters["say"] += 1
         elif kind == "think":
@@ -74,6 +78,7 @@ class ProgressModel:
             self._apply_tool_meta(ev, meta)
         elif kind == "tool_err":
             self.counters["errors"] += 1
+            self.recent_errors = (self.recent_errors + [{"t": t, "tool": ev.get("tool"), "text": ev.get("caption")}])[-5:]
         elif kind == "tool_done" and meta.get("op") == "created":
             self._reconcile_task_id(str(meta.get("taskId", "")), t)
         elif kind == "spawn":
@@ -141,6 +146,7 @@ class ProgressModel:
             "v": 1,
             "project": self.project,
             "session": self.session,
+            "title": self.title,
             "user": self.user,
             "status": status,
             "startedAt": self.started_at,
@@ -156,6 +162,7 @@ class ProgressModel:
             "counters": dict(self.counters),
             "rooms": dict(self.rooms),
             "last": self.last,
+            "recentErrors": list(self.recent_errors),
         }
 
 

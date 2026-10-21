@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
             _report(tracker, batch, a.print)
     except KeyboardInterrupt:
         pass
+    finally:
+        tracker.stop()
     return 0
 
 

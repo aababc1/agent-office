@@ -27,11 +27,16 @@ def extracted():
     with tempfile.TemporaryDirectory() as out:
         tracker = SessionTracker(FIXTURE, out, project="fixture", user="tester")
         events = tracker.poll()
-        proj = os.path.join(out, "fixture")
-        progress = json.load(open(os.path.join(proj, tracker.session + ".progress.json")))
-        on_disk = [json.loads(l) for l in open(os.path.join(proj, tracker.session + ".events.jsonl"))]
+        ses = os.path.join(out, "sessions")
+        progress = json.load(open(os.path.join(ses, tracker.session + ".progress.json")))
+        on_disk = [json.loads(l) for l in open(os.path.join(ses, tracker.session + ".events.jsonl"))]
         index = json.load(open(os.path.join(out, "index.json")))
-        yield events, progress, on_disk, index
+        summary = json.load(open(os.path.join(out, "summary.json")))
+        project = json.load(open(os.path.join(out, "project.json")))
+        assert os.path.exists(os.path.join(out, ".office-running"))   # live marker while attached
+        tracker.stop()
+        running = os.path.exists(os.path.join(out, ".office-running"))
+        yield events, progress, on_disk, index, summary, project, running
 
 
 # ---- rooms --------------------------------------------------------------
@@ -79,6 +84,10 @@ def test_mask_secrets():
     assert mask_secrets("plain text stays") == "plain text stays"
 
 
+def test_clean_text_drops_links():
+    assert clean_text("see [cowboy76](https://threads.net/@cowboy76) and https://example.com/x?y=1 now") == "see cowboy76 and 🔗 now"
+
+
 def test_clean_text_strips_system_blocks_and_truncates():
     raw = "<system-reminder>hidden stuff</system-reminder>\n# Title\n- real **prompt** " + "x" * 500
     out = clean_text(raw)
@@ -89,7 +98,7 @@ def test_clean_text_strips_system_blocks_and_truncates():
 
 # ---- parser on the fixture ---------------------------------------------
 def test_events_validate_against_schema(extracted):
-    events, _, on_disk, _ = extracted
+    events, _, on_disk, *_ = extracted
     allowed_keys = set(SCHEMA["properties"])
     kinds = set(SCHEMA["properties"]["kind"]["enum"])
     rooms = set(SCHEMA["properties"]["room"]["enum"])
@@ -102,7 +111,7 @@ def test_events_validate_against_schema(extracted):
 
 
 def test_ordering_and_coverage(extracted):
-    events, _, _, _ = extracted
+    events, *_ = extracted
     assert [e["seq"] for e in events] == list(range(len(events)))
     assert [e["t"] for e in events] == sorted(e["t"] for e in events)
     kinds = {e["kind"] for e in events}
@@ -122,7 +131,7 @@ def test_unknown_record_types_are_ignored():
 
 
 def test_tool_pairing_and_durations(extracted):
-    events, _, _, _ = extracted
+    events, *_ = extracted
     starts = {e["ref"]: e for e in events if e["kind"] == "tool"}
     for e in events:
         if e["kind"] in ("tool_done", "tool_err"):
@@ -135,7 +144,7 @@ def test_tool_pairing_and_durations(extracted):
 
 def test_no_tool_results_leak(extracted):
     """The biggest payloads in a transcript are tool results; none may reach the output."""
-    _, _, on_disk, _ = extracted
+    _, _, on_disk, *_ = extracted
     blob = json.dumps(on_disk, ensure_ascii=False)
     assert "search_results" not in blob           # body of the conversation_search result
     assert "launcher-settings.json" not in blob or "읽는 중" in blob  # only as a caption
@@ -143,7 +152,7 @@ def test_no_tool_results_leak(extracted):
 
 
 def test_subagent_lifecycle(extracted):
-    events, progress, _, _ = extracted
+    events, progress, *_ = extracted
     agent_evs = [e for e in events if e["actor"].startswith("agent:")]
     assert agent_evs[0]["kind"] == "spawn" and agent_evs[0]["room"] == "elevator"
     assert agent_evs[0]["meta"]["agentType"] == "Explore"
@@ -153,7 +162,7 @@ def test_subagent_lifecycle(extracted):
 
 
 def test_progress_tasks_use_real_ids(extracted):
-    _, progress, _, _ = extracted
+    _, progress, *_ = extracted
     ids = [t["id"] for t in progress["tasks"]]
     assert ids and all(i.isdigit() for i in ids), ids   # reconciled from "Task #N created"
     assert progress["progress"]["tasksTotal"] == len(ids)
@@ -173,10 +182,16 @@ def test_progress_todo_write_is_whole_truth():
     assert snap["status"] == "idle"
 
 
-def test_index_and_project_files(extracted):
-    _, _, _, index = extracted
-    assert index["projects"][0]["name"] == "fixture"
-    assert index["projects"][0]["sessions"] == 1
+def test_index_summary_project_files(extracted):
+    _, progress, _, index, summary, project, running = extracted
+    assert index["projects"][0]["name"] == "fixture" and index["projects"][0]["sessions"] == 1
+    assert summary["name"] == "fixture" and summary["sessions"]["total"] == 1
+    assert summary["sessions"]["latest"]["session"] == progress["session"]
+    assert summary["emitterAt"] and summary["status"] in ("active", "idle")
+    assert isinstance(summary["alerts"], list)
+    assert project["sessions"][0]["title"] == progress["title"]
+    assert progress["title"] and len(progress["title"]) <= 60     # first prompt becomes the session title
+    assert running is False                                       # stop() removed the live marker
 
 
 def test_follow_mode_is_incremental(tmp_path):
@@ -186,7 +201,7 @@ def test_follow_mode_is_incremental(tmp_path):
     live.write_text("\n".join(lines[:40]) + "\n", encoding="utf-8")
     tracker = SessionTracker(str(live), str(tmp_path / "out"), project="p")
     first = tracker.poll()
-    assert first
+    assert first and (tmp_path / "out" / ".office-running").exists()
     assert tracker.poll() == []                           # nothing new → nothing emitted
     with open(live, "a", encoding="utf-8") as f:          # simulate Claude Code appending
         f.write("\n".join(lines[40:80]) + "\n")
