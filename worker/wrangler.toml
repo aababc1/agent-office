@@ -2,6 +2,7 @@ name = "agent-office"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true                  # serve at https://agent-office.<subdomain>.workers.dev
 
 # The viewer is served as static assets by the same Worker; API/auth/ws/ingest paths hit the Worker first.
 [assets]
