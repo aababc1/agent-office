@@ -29,7 +29,7 @@ Claude와 서브에이전트가 방을 오가며 일하는 모습(캐릭터·말
 | `extractor/office_extract/` | 추출기 (Python 3.10+, 표준 라이브러리만) |
 | `schema/events.v1.schema.json` | 이벤트 스키마. 뷰어는 이것만 안다 |
 | `hooks/` | 세션 시작 시 추출기를 띄우는 훅과 git 푸셔 |
-| `viewer/index.html` | 단일 파일 뷰어 (정적 호스팅용) |
+| `viewer/index.html` | 단일 파일 아이소메트릭 뷰어 (캔버스로 그림, 이미지 에셋 없음, 정적 호스팅용) |
 | `viewer/build_preview.py` | 데이터를 내장한 미리보기 HTML 생성 |
 | `fixtures/session-sample/` | 실제 세션을 값만 잘라낸 테스트 픽스처 |
 | `tests/` | pytest |

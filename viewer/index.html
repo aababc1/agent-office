@@ -8,128 +8,122 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
 <style>
-/* Layout: floor guide | office floor | progress — a drafting-table floor plan on cool paper; rooms are tinted zones,
-   people are chips that slide between them, and the right rail reads like a site log. */
+/* Layout: department-store floor guide | isometric office (canvas + HTML bubbles) | site log rail.
+   Cool paper, ink type, one signal green for LIVE. The office itself is drawn in code: no image assets. */
 :root{
-  --paper:#F4F6F8; --panel:#FFFFFF; --ink:#1B2430; --muted:#5F6D7B; --line:#D5DDE5; --line-strong:#AEB9C4;
-  --accent:#0B6E7F; --accent-ink:#FFFFFF; --live:#15A35D; --warn:#C7791A; --bad:#C8463B;
-  --bubble:#FFFFFF; --bubble-ink:#1B2430; --shadow:0 1px 2px rgba(20,30,40,.08),0 6px 18px rgba(20,30,40,.08);
-  --r-archive:#DFEBE3; --r-dev:#DEE5F2; --r-server:#E6E8EC; --r-search:#DCEAF3; --r-meeting:#F1EAD9; --r-desk:#ECE4F0; --r-lounge:#EEF0EC; --r-elevator:#E3E4E6;
-  --c-claude:#D86A2E; --c-user:#3B5BA9; --c-explore:#1F8A8A; --c-plan:#7A4FB3; --c-general:#3B6EC9; --c-guide:#B08A1E; --c-other:#6B7580;
+  --paper:#F3F5F7; --panel:#FFFFFF; --ink:#1B2430; --muted:#606E7C; --line:#D6DDE4; --line-strong:#AEB9C4;
+  --accent:#0B6E7F; --accent-ink:#FFFFFF; --live:#16A35C; --warn:#C7791A; --bad:#C8463B;
+  --bubble:#FFFFFF; --bubble-ink:#1B2430; --shadow:0 1px 2px rgba(20,30,40,.08),0 6px 18px rgba(20,30,40,.10);
+  --stage:#E9EDF1;
+  --c-claude:#DD6F2E; --c-user:#2F4F9E; --c-explore:#2E9D5B; --c-plan:#7B4FB5; --c-general:#3B6EC9; --c-guide:#B38B1D; --c-other:#6B7580;
   --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#10161D; --panel:#171F28; --ink:#E7ECF1; --muted:#97A5B3; --line:#2A3542; --line-strong:#3E4C5B;
+  --paper:#0F151C; --panel:#161E27; --ink:#E6EBF0; --muted:#96A4B2; --line:#283340; --line-strong:#3C4A59;
   --accent:#4FB3C4; --accent-ink:#0B1218; --live:#3BCB7E; --warn:#E39A3B; --bad:#E86A5E;
-  --bubble:#1F2933; --bubble-ink:#E7ECF1; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
-  --r-archive:#1B2A24; --r-dev:#1B2433; --r-server:#20262D; --r-search:#182733; --r-meeting:#2B2619; --r-desk:#27202C; --r-lounge:#1C2220; --r-elevator:#23272C;
-  color-scheme:dark}}
+  --bubble:#1F2933; --bubble-ink:#E6EBF0; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
+  --stage:#121A22; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --paper:#10161D; --panel:#171F28; --ink:#E7ECF1; --muted:#97A5B3; --line:#2A3542; --line-strong:#3E4C5B;
+  --paper:#0F151C; --panel:#161E27; --ink:#E6EBF0; --muted:#96A4B2; --line:#283340; --line-strong:#3C4A59;
   --accent:#4FB3C4; --accent-ink:#0B1218; --live:#3BCB7E; --warn:#E39A3B; --bad:#E86A5E;
-  --bubble:#1F2933; --bubble-ink:#E7ECF1; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
-  --r-archive:#1B2A24; --r-dev:#1B2433; --r-server:#20262D; --r-search:#182733; --r-meeting:#2B2619; --r-desk:#27202C; --r-lounge:#1C2220; --r-elevator:#23272C;
-  color-scheme:dark}
+  --bubble:#1F2933; --bubble-ink:#E6EBF0; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 20px rgba(0,0,0,.35);
+  --stage:#121A22; color-scheme:dark}
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45;
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.45;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
-button{font:inherit;color:inherit}
-.app{display:grid;grid-template-columns:240px minmax(0,1fr) 300px;gap:14px;min-height:100%}
-@media (max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)} .rail{grid-column:1/-1}}
-@media (max-width:720px){.app{grid-template-columns:minmax(0,1fr)} .guide,.rail{grid-column:auto}}
+button,select,label{font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:250px minmax(0,1fr) 320px;gap:12px;min-height:100%}
+@media (max-width:1180px){.app{grid-template-columns:220px minmax(0,1fr)} .rail{grid-column:1/-1}}
+@media (max-width:760px){.app{grid-template-columns:minmax(0,1fr)} .guide,.rail{grid-column:auto}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 12px 6px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+h2 .n{font-family:var(--mono);font-weight:400;letter-spacing:0;text-transform:none}
+.sec{padding:0 12px 10px}
 
-/* ---- left: floor guide ---- */
+/* ---- floor guide (department-store directory) ---- */
 .guide{display:flex;flex-direction:column;gap:10px;min-width:0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
-.guide h2,.rail h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 12px 6px;font-weight:600}
-.floors{list-style:none;margin:0;padding:0 6px 6px}
-.floor-item{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-.floor-item:hover{background:var(--paper)}
-.floor-item.sel{border-color:var(--accent);background:var(--paper)}
-.floor-no{font-family:var(--mono);font-size:12px;font-weight:500;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:2px 6px;min-width:34px;text-align:center}
-.floor-item.sel .floor-no{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.floor-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.floor-sub{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--line-strong);display:inline-block}
-.dot.live{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
-.sessions{list-style:none;margin:0;padding:0 6px 6px;display:flex;flex-direction:column;gap:2px}
-.ses-item{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px}
-.ses-item:hover{background:var(--paper)}
-.ses-item.sel{background:var(--paper);outline:1px solid var(--accent)}
-.ses-id{font-family:var(--mono);color:var(--muted)}
-.ses-time{color:var(--muted);white-space:nowrap}
-.ses-item .pill{margin-left:auto}
-
-/* ---- center: office ---- */
-.main{display:flex;flex-direction:column;gap:10px;min-width:0}
-.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px}
-.topbar .title{font-weight:600;font-size:15px}
-.topbar .sub{color:var(--muted);font-family:var(--mono);font-size:12px}
-.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.pill.live,.pill.active{color:var(--live);border-color:color-mix(in srgb,var(--live) 50%,transparent)}
-.pill.live .dot,.pill.active .dot{animation:pulse 1.6s infinite}
+.floors{list-style:none;margin:0;padding:4px 8px 8px;display:flex;flex-direction:column;gap:4px}
+.floor{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;padding:8px 8px;border-radius:10px;cursor:pointer;border:1.5px solid transparent}
+.floor:hover{background:var(--paper)}
+.floor.sel{border-color:var(--accent);background:var(--paper)}
+.floor .no{font-family:var(--mono);font-size:13px;font-weight:500;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 0;text-align:center}
+.floor.sel .no{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.floor .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.floor .sb{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--line-strong);flex:none}
+.lamp.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
+.lamp.off{background:var(--line)}
+.follow{display:flex;align-items:center;gap:8px;padding:6px 12px 10px;font-size:12px;color:var(--muted);cursor:pointer}
+.follow input{accent-color:var(--accent)}
+.sessions{list-style:none;margin:0;padding:0 8px 8px;display:flex;flex-direction:column;gap:2px;max-height:300px;overflow:auto}
+.ses{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px;align-items:center}
+.ses:hover{background:var(--paper)} .ses.sel{background:var(--paper);outline:1.5px solid var(--accent)}
+.ses .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .ses .t small{font-family:var(--mono);color:var(--muted);font-size:10px;margin-left:4px}
+.ses .w{font-size:11px;color:var(--muted);white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted);white-space:nowrap;background:var(--panel)}
+.pill.active{color:var(--live);border-color:color-mix(in srgb,var(--live) 50%,transparent)}
+.pill.active .lamp{animation:pulse 1.6s infinite}
 .pill.idle{color:var(--warn)} .pill.ended{color:var(--muted)}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 2px color-mix(in srgb,var(--live) 30%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+
+/* ---- stage ---- */
+.main{display:flex;flex-direction:column;gap:10px;min-width:0}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px}
+.topbar .title{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px}
+.topbar .title .no{font-family:var(--mono);font-size:11px;background:var(--ink);color:var(--paper);border-radius:6px;padding:1px 6px}
+.topbar .sub{color:var(--muted);font-family:var(--mono);font-size:11px}
 .controls{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:500}
 .btn:hover{border-color:var(--line-strong)} .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn:focus-visible,.floor-item:focus-visible,.ses-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:focus-visible,.floor:focus-visible,.ses:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 select.btn{padding:4px 6px}
-.scrub{display:flex;align-items:center;gap:8px;padding:0 12px 10px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.scrub{display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-family:var(--mono);font-size:11px;color:var(--muted)}
 .scrub input{flex:1;min-width:0;accent-color:var(--accent)}
-.floor-wrap{padding:12px}
-.floor{position:relative;width:100%;aspect-ratio:16/10;max-width:100%;border:1.5px solid var(--line-strong);border-radius:6px;overflow:hidden;
-  background:var(--paper);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:5% 8%}
-.room{position:absolute;border:1px solid var(--line-strong);padding:6px 8px;overflow:hidden}
-.room .rname{font-size:11px;font-weight:600;letter-spacing:.02em}
-.room .ren{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-.room .furn{position:absolute;inset:auto 8px 8px 8px;display:flex;gap:6px;flex-wrap:wrap;opacity:.55;pointer-events:none}
-.furn i{display:block;width:18px;height:9px;border:1px solid var(--line-strong);border-radius:2px;background:var(--panel)}
-.furn i.tall{height:16px;width:8px} .furn i.round{width:12px;height:12px;border-radius:50%}
-.room.hot{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent)}
-.char{position:absolute;width:0;height:0;transition:left 1.1s cubic-bezier(.4,.1,.2,1),top 1.1s cubic-bezier(.4,.1,.2,1);z-index:2}
-.char .body{position:absolute;left:-16px;top:-16px;width:32px;height:32px;border-radius:50% 50% 45% 45%;display:flex;align-items:center;justify-content:center;
-  color:#fff;font-weight:600;font-size:13px;border:2px solid var(--panel);box-shadow:var(--shadow)}
-.char .name{position:absolute;top:18px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:600;background:var(--panel);border:1px solid var(--line);
-  border-radius:999px;padding:1px 6px;color:var(--ink)}
-.char.walking .body{animation:bob .35s infinite alternate}
-@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
-.char.gone{opacity:0;transition:opacity .8s}
-.bubble{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);width:max-content;min-width:48px;max-width:min(240px,48vw);background:var(--bubble);color:var(--bubble-ink);
-  border:1px solid var(--line-strong);border-radius:10px;padding:5px 8px;font-size:11px;line-height:1.35;box-shadow:var(--shadow);z-index:3;white-space:normal;word-break:break-word}
+.stage{position:relative;margin:0 12px 12px;height:620px;max-height:72vh;border-radius:10px;overflow:hidden;background:var(--stage);border:1px solid var(--line);touch-action:none}
+@media (max-width:760px){.stage{height:460px}}
+.stage canvas{display:block;width:100%;height:100%}
+.overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.zoom{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:column;gap:4px}
+.zoom .btn{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1}
+.bubble{position:absolute;transform:translate(-50%,-100%);width:max-content;min-width:40px;max-width:min(230px,46vw);background:var(--bubble);color:var(--bubble-ink);
+  border:1px solid var(--line-strong);border-radius:10px;padding:5px 8px;font-size:11px;line-height:1.35;box-shadow:var(--shadow);white-space:normal;word-break:break-word}
 .bubble::after{content:"";position:absolute;left:50%;bottom:-6px;width:9px;height:9px;background:var(--bubble);border-right:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);transform:translateX(-50%) rotate(45deg)}
-.bubble.think{border-style:dashed;border-radius:14px;color:var(--muted)}
-.bubble.think::after{border-style:dashed;}
+.bubble.think{border-style:dashed;border-radius:16px;color:var(--muted)} .bubble.think::after{border-style:dashed;border-radius:0 0 3px 0}
 .bubble.tool{font-family:var(--mono);font-size:10.5px}
 .bubble.err{border-color:var(--bad);color:var(--bad)}
+.bubble.user{border-color:color-mix(in srgb,var(--c-user) 60%,var(--line-strong))}
 .bubble .el{color:var(--muted);font-family:var(--mono);font-size:10px;margin-left:4px}
-.bubble.gone{opacity:0;transition:opacity .6s}
-.sweat{position:absolute;left:14px;top:-22px;font-size:12px}
-.char .cue{position:absolute;left:14px;top:-24px;font-size:12px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
-.char.zzz .cue::before{content:"💤"}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:0 12px 12px;font-size:11px;color:var(--muted)}
-.legend b{color:var(--ink);font-weight:600} .legend i{display:inline-block;width:10px;height:10px;border:1px solid var(--line-strong);border-radius:2px;vertical-align:-1px;margin-right:4px}
+.tag{position:absolute;transform:translate(-50%,0);font-size:10px;font-weight:600;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:1px 7px;white-space:nowrap;color:var(--ink)}
+.tag i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;vertical-align:1px}
+.elev-ind{position:absolute;transform:translate(-50%,-100%);font-family:var(--mono);font-size:12px;font-weight:500;background:var(--ink);color:var(--paper);padding:2px 8px;border-radius:6px;opacity:0;transition:opacity .4s}
+.elev-ind.show{opacity:1}
+.roomlabel{position:absolute;transform:translate(-50%,-50%);font-size:10px;font-weight:600;color:var(--ink);background:color-mix(in srgb,var(--panel) 80%,transparent);border-radius:6px;padding:1px 6px;letter-spacing:.02em}
+.roomlabel small{font-family:var(--mono);color:var(--muted);font-weight:400;font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-left:4px}
+.empty{padding:20px 12px;color:var(--muted);font-size:12px}
 
-/* ---- right: rail ---- */
+/* ---- rail ---- */
 .rail{display:flex;flex-direction:column;gap:10px;min-width:0}
-.rail .sec{padding:0 12px 10px}
-.kpi{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 12px 10px}
-.kpi div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-.kpi .v{font-family:var(--mono);font-size:18px;font-weight:500;font-variant-numeric:tabular-nums}
-.kpi .k{font-size:10px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.kv{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 10px;font-size:12px;padding:4px 12px 10px}
+.kv .k{color:var(--muted)} .kv .v{font-family:var(--mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar{height:8px;background:var(--paper);border:1px solid var(--line);border-radius:999px;overflow:hidden;margin:6px 0 2px}
 .bar i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .6s}
-.people{display:flex;flex-direction:column;gap:8px}
-.person{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:start}
-.person .av{width:26px;height:26px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px}
-.person .pn{font-weight:600;font-size:12px;display:flex;gap:6px;align-items:baseline;min-width:0}
-.person .pn small{color:var(--muted);font-weight:400;font-family:var(--mono);font-size:10px}
-.person .pc{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.person .pm{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:4px 12px 10px}
+.kpi div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.kpi .v{font-family:var(--mono);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+.kpi .k{font-size:9px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.people{display:flex;flex-direction:column;gap:10px}
+.person{display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px}
+.person .av{width:28px;height:28px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px}
+.person .l1{display:flex;align-items:center;gap:6px;min-width:0}
+.person .nm{font-weight:600;font-size:12px;white-space:nowrap} .person .sub{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{margin-left:auto;font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.badge.work{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,transparent)} .badge.think{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,transparent)} .badge.err{color:var(--bad);border-color:var(--bad)}
+.person .l2{font-size:11px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.person .l3{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
 .tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
 .task{display:flex;gap:8px;align-items:flex-start;font-size:12px}
 .task .st{flex:none;margin-top:2px;width:14px;height:14px;border-radius:4px;border:1.5px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center;font-size:9px}
@@ -139,15 +133,17 @@ select.btn{padding:4px 6px}
 .task .tid{font-family:var(--mono);color:var(--muted);font-size:10px;flex:none;margin-top:1px}
 .files{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
 .files span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:340px;overflow:auto;font-size:11px}
-.log li{display:grid;grid-template-columns:52px 16px minmax(0,1fr);gap:6px;align-items:start}
-.log .lt{font-family:var(--mono);color:var(--muted);font-size:10px;margin-top:1px}
-.log .la{width:14px;height:14px;border-radius:50%;margin-top:1px}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;max-height:360px;overflow:auto;font-size:11px}
+.log li{display:grid;grid-template-columns:62px 16px minmax(0,1fr);gap:6px;align-items:start}
+.log .lt{font-family:var(--mono);color:var(--muted);font-size:10px;margin-top:1px;white-space:nowrap}
+.log .la{width:14px;height:14px;border-radius:50%;margin-top:1px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:600}
 .log .lc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .log .lc.say{white-space:normal}
-.empty{padding:20px 12px;color:var(--muted);font-size:12px}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:0 12px 12px;font-size:11px;color:var(--muted)}
+.legend b{color:var(--ink);font-weight:600}
+.legend i{display:inline-block;width:10px;height:10px;border:1px solid var(--line-strong);border-radius:2px;vertical-align:-1px;margin-right:5px}
 .note{font-size:11px;color:var(--muted);padding:0 12px 10px}
-@media (prefers-reduced-motion:reduce){.char,.bar i{transition:none}.char.walking .body,.pill.live .dot,.pill.active .dot{animation:none}}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}.pill.active .lamp{animation:none}}
 </style>
 <!--OFFICE:HEAD-END-->
 </head>
@@ -156,54 +152,53 @@ select.btn{padding:4px 6px}
 <div class="app">
   <aside class="guide">
     <section class="card">
-      <h2>층별 안내 · Floor guide</h2>
+      <h2>층별 안내 <span class="n">FLOOR GUIDE</span></h2>
       <ul class="floors" id="floors"></ul>
+      <label class="follow"><input type="checkbox" id="follow" checked> 최근 세션 자동으로 따라가기</label>
     </section>
     <section class="card">
-      <h2>세션</h2>
+      <h2>이 층의 세션 <span class="n" id="ses-n"></span></h2>
       <ul class="sessions" id="sessions"></ul>
-    </section>
-    <section class="card">
-      <h2>어디서 무엇을 하나</h2>
-      <div class="legend" id="legend"></div>
     </section>
   </aside>
 
   <main class="main">
     <section class="card">
       <div class="topbar">
-        <span class="title" id="t-project">—</span>
+        <span class="title"><span class="no" id="t-floor">—</span><span id="t-project">Agent Office</span></span>
         <span class="sub" id="t-session"></span>
-        <span class="pill" id="t-status"><span class="dot"></span><span>…</span></span>
+        <span class="pill" id="t-status"><span class="lamp"></span><span>…</span></span>
         <div class="controls">
           <button class="btn on" id="b-live" type="button">라이브</button>
           <button class="btn" id="b-replay" type="button">▶ 다시보기</button>
-          <select class="btn" id="speed" aria-label="재생 속도">
-            <option value="20">20×</option><option value="60" selected>60×</option><option value="300">300×</option>
-          </select>
+          <select class="btn" id="speed" aria-label="재생 속도"><option value="20">20×</option><option value="60" selected>60×</option><option value="300">300×</option></select>
         </div>
       </div>
-      <div class="scrub" id="scrub" hidden><span id="s-time">00:00</span><input type="range" id="s-range" min="0" max="0" value="0" aria-label="타임라인"><span id="s-count">0/0</span></div>
-      <div class="floor-wrap"><div class="floor" id="floor"></div></div>
+      <div class="scrub" id="scrub" hidden><span id="s-time">00:00:00</span><input type="range" id="s-range" min="0" max="0" value="0" aria-label="타임라인"><span id="s-count">0/0</span></div>
+      <div class="stage" id="stage">
+        <canvas id="iso"></canvas>
+        <div class="overlay" id="overlay"></div>
+        <div class="zoom"><button class="btn" id="z-in" type="button" aria-label="확대">+</button><button class="btn" id="z-out" type="button" aria-label="축소">−</button><button class="btn" id="z-fit" type="button" aria-label="맞춤" style="font-size:11px">⟲</button></div>
+      </div>
     </section>
   </main>
 
   <aside class="rail">
     <section class="card">
-      <h2>진행도</h2>
-      <div class="sec">
-        <div style="display:flex;justify-content:space-between;font-size:12px"><span>할 일</span><span class="mono" id="p-ratio">—</span></div>
-        <div class="bar"><i id="p-bar" style="width:0%"></i></div>
-      </div>
+      <div class="kv"><span class="k">프로젝트</span><span class="v" id="r-project">—</span><span class="k">세션</span><span class="v" id="r-session">—</span><span class="k">마지막</span><span class="v" id="r-last">—</span></div>
+    </section>
+    <section class="card">
+      <h2>진행도 <span class="n" id="p-ratio"></span></h2>
+      <div class="sec"><div class="bar"><i id="p-bar" style="width:0%"></i></div></div>
       <div class="kpi">
         <div><div class="v" id="k-commits">0</div><div class="k">commits</div></div>
-        <div><div class="v" id="k-files">0</div><div class="k">files touched</div></div>
-        <div><div class="v" id="k-tools">0</div><div class="k">tool calls</div></div>
-        <div><div class="v" id="k-think">0m</div><div class="k">thinking</div></div>
+        <div><div class="v" id="k-files">0</div><div class="k">files</div></div>
+        <div><div class="v" id="k-tools">0</div><div class="k">tools</div></div>
+        <div><div class="v" id="k-think">0s</div><div class="k">thinking</div></div>
       </div>
     </section>
     <section class="card">
-      <h2>사무실 사람들 <span id="p-count"></span></h2>
+      <h2>사무실 사람들 <span class="n" id="p-count"></span></h2>
       <div class="sec people" id="people"></div>
     </section>
     <section class="card">
@@ -218,184 +213,421 @@ select.btn{padding:4px 6px}
       <h2>활동 로그</h2>
       <div class="sec"><ul class="log" id="log"></ul></div>
     </section>
+    <section class="card">
+      <h2>어디서 무엇을 하나</h2>
+      <div class="legend" id="legend"></div>
+    </section>
   </aside>
 </div>
 
 <script>
 (() => {
 'use strict';
-// ------------------------------------------------------------------ data access
+// ================================================================ data access
 const BASE = (window.OFFICE_DATA_BASE || 'data').replace(/\/$/, '');
-const EMB = window.OFFICE_DATA || null;            // embedded fallback (preview builds)
+const EMB = window.OFFICE_DATA || null;
 const POLL_MS = window.OFFICE_POLL_MS || 10000;
-
 async function getJSON(path) {
-  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return await r.json(); } catch (e) { /* fall through */ }
+  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return await r.json(); } catch (e) { /* fallback */ }
   if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
   throw new Error('missing ' + path);
 }
 async function getEvents(path) {
-  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return parseJSONL(await r.text()); } catch (e) { /* fall through */ }
+  try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return parseJSONL(await r.text()); } catch (e) { /* fallback */ }
   if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
   throw new Error('missing ' + path);
 }
 const parseJSONL = t => t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 
-// ------------------------------------------------------------------ office geometry (percent of floor)
-const ROOMS = {
-  archive: {x:0,  y:0,  w:34, h:38, ko:'자료실',     en:'archive',  furn:'tall tall tall tall'},
-  meeting: {x:34, y:0,  w:32, h:38, ko:'회의실',     en:'meeting',  furn:'round round round'},
-  search:  {x:66, y:0,  w:34, h:38, ko:'정보검색실', en:'search',   furn:'desk desk'},
-  dev:     {x:0,  y:38, w:34, h:38, ko:'개발실',     en:'dev',      furn:'desk desk desk desk desk desk'},
-  desk:    {x:34, y:38, w:32, h:38, ko:'내 자리',    en:'desk',     furn:'desk round'},
-  server:  {x:66, y:38, w:34, h:38, ko:'서버실',     en:'server',   furn:'tall tall tall'},
-  lounge:  {x:0,  y:76, w:66, h:24, ko:'라운지',     en:'lounge',   furn:'round round desk'},
-  elevator:{x:66, y:76, w:34, h:24, ko:'엘리베이터', en:'elevator', furn:'tall'},
-};
-const LEGEND = [['archive','파일 읽기·검색'],['dev','코드 작성·수정'],['server','명령 실행·git'],['search','웹·외부 도구'],['meeting','계획·할 일·스킬'],['desk','질문·에이전트 호출'],['elevator','서브에이전트 출퇴근']];
-const TOOL_ICON = {Read:'📖',Glob:'🔎',Grep:'🔎',Edit:'✏️',Write:'📝',MultiEdit:'✏️',NotebookEdit:'✏️',Bash:'⌨️',WebSearch:'🌐',WebFetch:'🌐',
-  TodoWrite:'📋',TaskCreate:'📋',TaskUpdate:'📋',AskUserQuestion:'🙋',SendUserMessage:'💬',SendUserFile:'📎',Agent:'🛗',Task:'🛗',Skill:'📚',ToolSearch:'🧰'};
-const toolIcon = t => TOOL_ICON[t] || (t && t.startsWith('mcp__') ? '🔌' : '🔧');
-const costume = type => ({Explore:'var(--c-explore)',Plan:'var(--c-plan)','general-purpose':'var(--c-general)','claude-code-guide':'var(--c-guide)'})[type] || 'var(--c-other)';
-
-// ------------------------------------------------------------------ state
-const S = {
-  index: null, project: null, projectInfo: null, session: null,
-  events: [], progress: null,
-  chars: {},            // actor -> {room, bubble, el, color, label, gone, lastKind, lastT}
-  mode: 'live',         // live | replay
-  cursor: 0,            // events applied (replay)
-  clock: () => Date.now(),
-  replay: {timer: null, vt: 0, speed: 60, last: 0},
-  pollTimer: null,
-};
+// ================================================================ helpers
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tsOf = e => Date.parse(e.t);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 const fmtRel = (iso, now = Date.now()) => { if (!iso) return ''; const d = Math.max(0, (now - Date.parse(iso)) / 1000);
   return d < 5 ? '방금' : d < 60 ? `${d|0}초 전` : d < 3600 ? `${(d/60)|0}분 전` : d < 86400 ? `${(d/3600)|0}시간 전` : `${(d/86400)|0}일 전`; };
-const fmtClock = ms => { const d = new Date(ms); return d.toLocaleTimeString('ko-KR', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'}); };
-const fmtDur = ms => ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms/1000).toFixed(ms < 10000 ? 1 : 0)}s` : `${(ms/60000)|0}m${Math.round(ms%60000/1000)}s`;
+const fmtClock = ms => new Date(ms).toLocaleTimeString('ko-KR', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'});
+const fmtDur = ms => ms < 1000 ? `${Math.max(0, ms)|0}ms` : ms < 60000 ? `${(ms/1000).toFixed(ms < 10000 ? 1 : 0)}s` : `${(ms/60000)|0}m${Math.round(ms%60000/1000)}s`;
+const fmtS = ms => ms < 60000 ? `${(ms/1000)|0}s` : `${(ms/60000)|0}m${((ms%60000)/1000)|0}s`;
 const shortId = s => (s || '').slice(0, 8);
+const hash = s => { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const isDark = () => document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
 
-// ------------------------------------------------------------------ floor rendering
-function buildFloor() {
-  const f = $('floor'); f.innerHTML = '';
-  for (const [k, r] of Object.entries(ROOMS)) {
-    const d = document.createElement('div'); d.className = 'room'; d.id = 'room-' + k;
-    d.style.cssText = `left:${r.x}%;top:${r.y}%;width:${r.w}%;height:${r.h}%;background:var(--r-${k})`;
-    d.innerHTML = `<div class="rname">${r.ko}</div><div class="ren">${r.en}</div><div class="furn">${r.furn.split(' ').map(c => `<i class="${c === 'desk' ? '' : c}"></i>`).join('')}</div>`;
-    f.appendChild(d);
-  }
-  $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:var(--r-${k})"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join('');
+// ================================================================ office map (grid units)
+const TW = 64, TH = 32;                     // 2:1 iso tile, z in px
+const GW = 24, GH = 17;
+const ROOMS = {
+  archive: {x:0,  y:0,  w:7,  h:6, ko:'자료실',     en:'archive',  floor:'carpet',  spots:[[1.6,2.0],[3.3,2.0],[5.0,2.0],[3.5,4.3]]},
+  meeting: {x:7,  y:0,  w:7,  h:6, ko:'회의실',     en:'meeting',  floor:'wood',    spots:[[9.0,3.8],[12.0,3.8],[10.5,4.9],[9.2,2.2]]},
+  dev:     {x:14, y:0,  w:10, h:7, ko:'개발실',     en:'dev',      floor:'tile',    spots:[[15.6,2.9],[17.6,2.9],[19.6,2.9],[21.6,2.9],[15.6,5.6],[17.6,5.6],[19.6,5.6],[21.6,5.6]]},
+  search:  {x:0,  y:6,  w:7,  h:5, ko:'정보검색실', en:'search',   floor:'tile',    spots:[[1.8,8.6],[4.2,8.6],[3.0,9.9]]},
+  desk:    {x:7,  y:6,  w:7,  h:5, ko:'내 자리',    en:'my desk',  floor:'carpet',  spots:[[10.6,9.5],[9.2,9.6],[12.0,9.6]]},
+  server:  {x:14, y:7,  w:10, h:4, ko:'서버실',     en:'server',   floor:'grid',    spots:[[15.8,9.2],[17.8,9.2],[19.8,9.2],[21.8,9.2]]},
+  lounge:  {x:0,  y:11, w:17, h:6, ko:'라운지',     en:'lounge',   floor:'wood',    spots:[[5.0,13.6],[12.4,14.4],[8.5,15.0],[3.0,15.6]]},
+  elevator:{x:17, y:11, w:7,  h:6, ko:'엘리베이터', en:'elevator', floor:'stone',   spots:[[20.5,14.2],[19.2,14.6],[21.8,14.6]]},
+};
+const ELEV = {door: [20.0, 11.0], inside: [20.8, 11.4], out: [20.8, 13.4]};   // door on the back wall of the elevator room
+const USER_SEAT = [10.6, 7.1];
+const LEGEND = [['archive','파일 읽기·검색'],['dev','코드 작성·수정'],['server','명령 실행·git'],['search','웹·외부 도구'],['meeting','계획·할 일·스킬'],['desk','질문·에이전트 호출'],['lounge','쉬는 중'],['elevator','서브에이전트 출퇴근']];
+const TOOL_ICON = {Read:'📖',Glob:'🔎',Grep:'🔎',Edit:'✏️',Write:'📝',MultiEdit:'✏️',NotebookEdit:'✏️',Bash:'⌨️',WebSearch:'🌐',WebFetch:'🌐',TodoWrite:'📋',TaskCreate:'📋',TaskUpdate:'📋',
+  AskUserQuestion:'🙋',SendUserMessage:'💬',SendUserFile:'📎',Agent:'📞',Task:'📞',Skill:'📚',ToolSearch:'🧰'};
+const toolIcon = t => TOOL_ICON[t] || (t && t.startsWith('mcp__') ? '🔌' : '🔧');
+const PALETTE = {
+  light: {wallTop:'#E8ECF0', wallL:'#D3DAE1', wallR:'#C2CAD3', glass:'#CFE6F2', glassHi:'#EAF5FB', partition:'#D8DEE4', partitionR:'#C5CDD5', line:'rgba(30,40,50,.12)',
+    carpet:'#DCE6DF', wood:'#E7DCC8', tile:'#E4E8EC', grid:'#D9DDE2', stone:'#D7D9DC', rug:'#C9D7E8', shadow:'rgba(20,30,40,.18)',
+    wood1:'#8B6A4B', wood2:'#6F5238', metal:'#55606B', metalD:'#3C454E', screen:'#1B2A3A', screenOn:'#27405A', code:'#7CE0A1', paper:'#F7F8F9', ink:'#1B2430',
+    sofa:'#8E6F55', sofaD:'#6E5440', plant:'#4F9A5E', plantD:'#3B7A47', pot:'#B36A42', book:['#C94F4F','#3E7CB1','#E0A526','#5B9A6B','#8C5BB5'], led:'#39D27C', ledOff:'#1F6E44', rack:'#2F3A44', elev:'#8A96A3', elevD:'#6C7885'},
+  dark:  {wallTop:'#2B3641', wallL:'#222C36', wallR:'#1B242D', glass:'#2B4756', glassHi:'#3A5C6E', partition:'#2E3944', partitionR:'#232D37', line:'rgba(200,215,230,.08)',
+    carpet:'#1E2A24', wood:'#2B241B', tile:'#1D242B', grid:'#1A2128', stone:'#20252A', rug:'#1F2B3B', shadow:'rgba(0,0,0,.45)',
+    wood1:'#6B523A', wood2:'#4F3B29', metal:'#4A545E', metalD:'#303840', screen:'#0E1620', screenOn:'#1A2E44', code:'#7CE0A1', paper:'#E6EBF0', ink:'#E6EBF0',
+    sofa:'#6D5542', sofaD:'#52402F', plant:'#3E8A4F', plantD:'#2E6A3B', pot:'#8E5435', book:['#C94F4F','#3E7CB1','#E0A526','#5B9A6B','#8C5BB5'], led:'#39D27C', ledOff:'#1C4D33', rack:'#1D252D', elev:'#5B6773', elevD:'#454F5A'},
+};
+let PAL = PALETTE.light;
+
+// ================================================================ pixel sprites
+// 8x13 chibi. Letters map to palette slots; '.' is transparent. Rows 0-4 head, 5-8 torso, 9-12 legs.
+const BODY = [
+  '..hhhh..', '.hhhhhh.', '.hssssh.', '.seesse.', '..ssss..',
+  '..bbbb..', '.bbbbbb.', 'sbbbbbbs', '.bbbbbb.',
+  '..pppp..', '..p..p..', '..p..p..', '.ff..ff.'];
+const LEGS = [['..pppp..','..p..p..','..p..p..','.ff..ff.'], ['..pppp..','.p...p..','.p....p.','ff....ff'], ['..pppp..','..p...p.','.p....p.','ff....ff']];
+const COSTUME = {
+  claude:  {h:'#3B2A20', s:'#F1C9A5', b:'#DD6F2E', p:'#334155', f:'#1F2937', e:'#1B2430'},
+  user:    {h:'#1F1A17', s:'#F1C9A5', b:'#2F4F9E', p:'#475569', f:'#1F2937', e:'#1B2430'},
+  Explore: {h:'#5A3E2B', s:'#F1C9A5', b:'#2E9D5B', p:'#2F3E4E', f:'#1F2937', e:'#1B2430', hat:'#1F6F3F'},
+  Plan:    {h:'#2C2C3A', s:'#F1C9A5', b:'#7B4FB5', p:'#2F3E4E', f:'#1F2937', e:'#1B2430', glasses:'#2A2A2A'},
+  'general-purpose': {h:'#4A3326', s:'#F1C9A5', b:'#3B6EC9', p:'#2F3E4E', f:'#1F2937', e:'#1B2430'},
+  'claude-code-guide': {h:'#3B2A20', s:'#F1C9A5', b:'#B38B1D', p:'#2F3E4E', f:'#1F2937', e:'#1B2430'},
+  other:   {h:'#3B2A20', s:'#F1C9A5', b:'#6B7580', p:'#2F3E4E', f:'#1F2937', e:'#1B2430'},
+};
+const SCALE = 4;
+const spriteCache = new Map();
+function sprite(kind, frame, opts) {   // returns an offscreen canvas
+  const key = `${kind}|${frame}|${opts.think?1:0}|${opts.book?1:0}|${opts.sweat?1:0}|${opts.hair||''}`;
+  if (spriteCache.has(key)) return spriteCache.get(key);
+  const c = Object.assign({}, COSTUME[kind] || COSTUME.other); if (opts.hair) c.h = opts.hair;
+  const rows = BODY.slice(0, 9).concat(LEGS[frame % LEGS.length]);
+  const hasHat = !!c.hat; const top = hasHat ? 2 : 0;
+  const cv = document.createElement('canvas'); cv.width = 10 * SCALE; cv.height = (13 + top) * SCALE;
+  const g = cv.getContext('2d');
+  const px = (x, y, col) => { g.fillStyle = col; g.fillRect((x + 1) * SCALE, (y + top) * SCALE, SCALE, SCALE); };
+  const tilt = opts.think ? 1 : 0;
+  rows.forEach((row, y) => { [...row].forEach((ch, x) => { if (ch === '.') return;
+    let col = c[ch]; if (ch === 'e' && c.glasses && y === 3) col = c.glasses;
+    px(x + (y < 5 ? tilt : 0), y, col); }); });
+  if (c.glasses) { px(1 + tilt, 3, c.glasses); px(6 + tilt, 3, c.glasses); }
+  if (hasHat) { for (let x = 1; x < 7; x++) px(x + tilt, -2, c.hat); for (let x = 0; x < 8; x++) px(x + tilt, -1, c.hat); }
+  if (opts.think) { px(0, 4, c.s); px(0, 5, c.s); }                       // hand on chin
+  if (opts.book) { g.fillStyle = '#FFFFFF'; g.fillRect(0, (6 + top) * SCALE, 2 * SCALE, 3 * SCALE); g.fillStyle = '#C94F4F'; g.fillRect(0, (6 + top) * SCALE, 2 * SCALE, 1); }
+  if (opts.sweat) { g.fillStyle = '#4FB3F0'; g.fillRect(8 * SCALE + 1, (2 + top) * SCALE, SCALE - 1, SCALE); g.fillRect(8 * SCALE + 1, (3 + top) * SCALE, SCALE - 1, SCALE * 1.5); }
+  spriteCache.set(key, cv); return cv;
 }
+
+// ================================================================ camera & projection
+const canvas = $('iso'), ctx = canvas.getContext('2d'), overlay = $('overlay'), stage = $('stage');
+const cam = {z: 1, ox: 0, oy: 0, fitZ: 1};
+const P = (gx, gy, z = 0) => ({x: (gx - gy) * TW / 2, y: (gx + gy) * TH / 2 - z});
+const toScreen = (gx, gy, z = 0) => { const p = P(gx, gy, z); return {x: p.x * cam.z + cam.ox, y: p.y * cam.z + cam.oy}; };
+function fitCamera() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const corners = [P(0,0,80), P(GW,0,0), P(GW,GH,0), P(0,GH,0)];
+  const minX = Math.min(...corners.map(c => c.x)), maxX = Math.max(...corners.map(c => c.x));
+  const minY = Math.min(...corners.map(c => c.y)), maxY = Math.max(...corners.map(c => c.y)) + 24;
+  cam.fitZ = Math.min((W - 24) / (maxX - minX), (H - 24) / (maxY - minY));
+  cam.z = cam.fitZ * 1.12; cam.ox = W / 2 - ((minX + maxX) / 2) * cam.z; cam.oy = H / 2 - ((minY + maxY) / 2) * cam.z;
+}
+function resize() {
+  const dpr = window.devicePixelRatio || 1; const W = stage.clientWidth, H = stage.clientHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  if (!resize.done) { fitCamera(); resize.done = true; } else { cam.ox = clamp(cam.ox, -2000, 3000); }
+}
+new ResizeObserver(() => { resize(); fitCamera(); }).observe(stage);
+const zoomBy = f => { const W = stage.clientWidth / 2, H = stage.clientHeight / 2; const nz = clamp(cam.z * f, cam.fitZ * 0.6, cam.fitZ * 2.6);
+  cam.ox = W - (W - cam.ox) * (nz / cam.z); cam.oy = H - (H - cam.oy) * (nz / cam.z); cam.z = nz; };
+$('z-in').onclick = () => zoomBy(1.2); $('z-out').onclick = () => zoomBy(1 / 1.2); $('z-fit').onclick = fitCamera;
+let drag = null;
+stage.addEventListener('pointerdown', e => { if (e.target.closest('.zoom')) return; drag = {x: e.clientX, y: e.clientY, ox: cam.ox, oy: cam.oy}; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove', e => { if (!drag) return; cam.ox = drag.ox + e.clientX - drag.x; cam.oy = drag.oy + e.clientY - drag.y; });
+stage.addEventListener('pointerup', () => drag = null); stage.addEventListener('pointercancel', () => drag = null);
+stage.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, {passive: false});
+
+// ================================================================ drawing primitives
+function poly(pts, fill, stroke) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1 / cam.z; ctx.stroke(); } }
+function box(gx, gy, w, d, h, top, left, right, z0 = 0) {
+  poly([P(gx,gy+d,z0), P(gx+w,gy+d,z0), P(gx+w,gy+d,z0+h), P(gx,gy+d,z0+h)], left);
+  poly([P(gx+w,gy,z0), P(gx+w,gy+d,z0), P(gx+w,gy+d,z0+h), P(gx+w,gy,z0+h)], right);
+  poly([P(gx,gy,z0+h), P(gx+w,gy,z0+h), P(gx+w,gy+d,z0+h), P(gx,gy+d,z0+h)], top);
+}
+function shade(hex, k) { const n = parseInt(hex.slice(1), 16); const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const f = v => clamp(Math.round(v * k), 0, 255); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+const ellipse = (x, y, rx, ry, fill) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); };
+
+// ---- static scene: floors, walls, furniture as depth-sorted drawables
+function floorFill(kind) { return {carpet: PAL.carpet, wood: PAL.wood, tile: PAL.tile, grid: PAL.grid, stone: PAL.stone}[kind] || PAL.tile; }
+function drawFloors(t) {
+  for (const [k, r] of Object.entries(ROOMS)) {
+    poly([P(r.x,r.y), P(r.x+r.w,r.y), P(r.x+r.w,r.y+r.h), P(r.x,r.y+r.h)], floorFill(r.floor));
+    if (r.floor === 'tile' || r.floor === 'grid' || r.floor === 'stone') {           // tile seams
+      ctx.strokeStyle = PAL.line; ctx.lineWidth = 1 / cam.z; ctx.beginPath();
+      for (let i = 1; i < r.w; i++) { const a = P(r.x+i, r.y), b = P(r.x+i, r.y+r.h); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+      for (let j = 1; j < r.h; j++) { const a = P(r.x, r.y+j), b = P(r.x+r.w, r.y+j); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+      ctx.stroke();
+    }
+    if (r.floor === 'wood') { ctx.strokeStyle = PAL.line; ctx.lineWidth = 1 / cam.z; ctx.beginPath();
+      for (let j = 0.5; j < r.h; j += 0.5) { const a = P(r.x, r.y+j), b = P(r.x+r.w, r.y+j); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); } ctx.stroke(); }
+    if (r.floor === 'carpet') { ctx.fillStyle = PAL.line; for (let i = 0.5; i < r.w; i += 1) for (let j = 0.5; j < r.h; j += 1) { const p = P(r.x+i, r.y+j); ctx.fillRect(p.x - 1, p.y - 0.5, 2, 1); } }
+  }
+  // rug under the user's desk, carpet lane in the lounge
+  poly([P(9.2,8.2), P(12.2,8.2), P(12.2,10.6), P(9.2,10.6)], PAL.rug);
+  poly([P(0.6,11.6), P(8.4,11.6), P(8.4,16.4), P(0.6,16.4)], PAL.rug);
+}
+function drawBackWalls(t) {
+  const H = 78;
+  // gx = 0 wall (screen: runs down-left) and gy = 0 wall (runs down-right)
+  poly([P(0,0,0), P(0,GH,0), P(0,GH,H), P(0,0,H)], PAL.wallL);
+  poly([P(0,0,0), P(GW,0,0), P(GW,0,H), P(0,0,H)], PAL.wallR);
+  for (let i = 1; i < GH; i += 2.5) { poly([P(0,i,22), P(0,i+1.6,22), P(0,i+1.6,62), P(0,i,62)], PAL.glass); poly([P(0,i+0.2,40), P(0,i+1.4,40), P(0,i+1.4,58), P(0,i+0.2,58)], PAL.glassHi); }
+  for (let i = 1; i < GW; i += 2.5) { poly([P(i,0,22), P(i+1.6,0,22), P(i+1.6,0,62), P(i,0,62)], PAL.glass); poly([P(i+0.2,0,40), P(i+1.4,0,40), P(i+1.4,0,58), P(i+0.2,0,58)], PAL.glassHi); }
+  poly([P(0,0,H), P(0,0.25,H), P(0,GH,H), P(0,GH+0.25,H)], PAL.wallTop);
+  // whiteboard on the meeting room's back wall
+  poly([P(8.5,0,26), P(12.5,0,26), P(12.5,0,62), P(8.5,0,62)], PAL.paper);
+  const tasks = (S.progress && S.progress.tasks) || [];
+  ctx.lineWidth = 2 / cam.z;
+  tasks.slice(0, 8).forEach((task, i) => { const y = 56 - i * 4; const len = 1.2 + (hash(task.text) % 20) / 10;
+    ctx.strokeStyle = task.status === 'completed' ? PAL.led : task.status === 'in_progress' ? '#E0A526' : PAL.metal;
+    const a = P(8.9, 0, y), b = P(8.9 + len, 0, y); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); });
+  // elevator shaft on the back wall of the elevator room (a tall dark box with two doors)
+  const [ex, ey] = ELEV.door; const open = S.elev.open;                 // 0..1
+  box(ex, ey, 2.0, 0.2, 70, PAL.elevD, PAL.elevD, PAL.elevD);
+  poly([P(ex+0.1, ey+0.21, 2), P(ex+1.9, ey+0.21, 2), P(ex+1.9, ey+0.21, 64), P(ex+0.1, ey+0.21, 64)], '#1A2129');
+  const dw = 0.9 * (1 - open);
+  poly([P(ex+0.1, ey+0.22, 2), P(ex+0.1+dw, ey+0.22, 2), P(ex+0.1+dw, ey+0.22, 64), P(ex+0.1, ey+0.22, 64)], PAL.elev);
+  poly([P(ex+1.9-dw, ey+0.22, 2), P(ex+1.9, ey+0.22, 2), P(ex+1.9, ey+0.22, 64), P(ex+1.9-dw, ey+0.22, 64)], PAL.elev);
+  ctx.fillStyle = S.elev.lit > 0 ? PAL.led : PAL.ledOff; const lp = P(ex + 1, ey + 0.2, 68); ctx.fillRect(lp.x - 6, lp.y - 3, 12, 3);
+}
+function buildStatic() {
+  const items = [];
+  const seg = (gx, gy, dir) => items.push({d: gx + gy + 0.5, draw: () => { const h = 26;
+    if (dir === 'x') poly([P(gx,gy,0), P(gx+1,gy,0), P(gx+1,gy,h), P(gx,gy,h)], PAL.partitionR), poly([P(gx,gy-0.08,h), P(gx+1,gy-0.08,h), P(gx+1,gy+0.08,h), P(gx,gy+0.08,h)], PAL.wallTop);
+    else poly([P(gx,gy,0), P(gx,gy+1,0), P(gx,gy+1,h), P(gx,gy,h)], PAL.partition), poly([P(gx-0.08,gy,h), P(gx+0.08,gy,h), P(gx+0.08,gy+1,h), P(gx-0.08,gy+1,h)], PAL.wallTop); }});
+  const wallX = (gx, y0, y1, door) => { for (let y = y0; y < y1; y++) if (!(door && y >= door[0] && y < door[1])) seg(gx, y, 'y'); };
+  const wallY = (gy, x0, x1, door) => { for (let x = x0; x < x1; x++) if (!(door && x >= door[0] && x < door[1])) seg(x, gy, 'x'); };
+  wallX(7, 0, 6, [3, 5]); wallX(14, 0, 7, [3, 5]); wallX(7, 6, 11, [8, 10]); wallX(14, 7, 11, [8, 10]); wallX(17, 11, 17, [13, 15]);
+  wallY(6, 0, 7, [3, 5]); wallY(6, 7, 14, [9, 12]); wallY(7, 14, 24, [17, 20]); wallY(11, 0, 24, [2, 5, 9, 12, 15, 18, 20, 22]);
+  const add = (gx, gy, draw, depthBias = 0) => items.push({d: gx + gy + depthBias, draw});
+  // archive: bookshelves along the back wall + reading table
+  for (let i = 0; i < 4; i++) add(0.4 + i * 1.6, 0.15, () => bookshelf(0.4 + i * 1.6, 0.15), 1.2);
+  add(2.8, 3.4, () => { box(2.8, 3.4, 1.6, 1.0, 20, PAL.wood1, shade(PAL.wood1, .8), shade(PAL.wood1, .7)); }, 2.4);
+  add(1.0, 4.8, () => plant(1.0, 4.9)); add(6.0, 4.6, () => plant(6.1, 4.7));
+  // meeting: round table + chairs
+  add(10.5, 2.9, () => { const c = P(10.6, 3.2, 20); ellipse(c.x, c.y + 20, 62, 31, shade(PAL.wood1, .7)); ellipse(c.x, c.y, 62, 31, PAL.wood1); ellipse(c.x, c.y, 50, 25, shade(PAL.wood1, 1.08));
+    [[9.0,2.2],[12.3,2.2],[9.0,4.3],[12.3,4.3]].forEach(([x,y]) => box(x, y, .6, .6, 12, PAL.metal, PAL.metalD, PAL.metalD)); }, 1.4);
+  add(13.0, 4.9, () => plant(13.0, 5.0));
+  // dev: two rows of iMac desks
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 4; i++) { const x = 14.9 + i * 2, y = 0.6 + r * 2.7; add(x, y, () => imacDesk(x, y), 1.4); }
+  add(23.0, 5.8, () => plant(23.1, 5.9));
+  // search: globe + two standing screens
+  add(1.2, 6.5, () => standingScreen(1.2, 6.5), 1.2); add(3.6, 6.5, () => standingScreen(3.6, 6.5), 1.2);
+  add(5.6, 7.0, () => { box(5.7, 7.0, .8, .8, 10, PAL.metal, PAL.metalD, PAL.metalD); const c = P(6.1, 7.4, 34); ellipse(c.x, c.y, 15, 15, '#4C8CC4'); ellipse(c.x - 4, c.y - 2, 6, 4, '#7CBF7C'); ellipse(c.x + 5, c.y + 4, 4, 3, '#7CBF7C'); }, 1.4);
+  // my desk: desk + monitor facing front, user sits behind
+  add(9.6, 7.5, () => { box(9.6, 7.5, 2.0, 0.9, 18, PAL.wood1, shade(PAL.wood1, .82), shade(PAL.wood1, .7));
+    box(10.2, 7.8, 0.8, 0.2, 16, PAL.metal, PAL.screen, PAL.screenOn, 18); const k = P(10.6, 8.3, 19); ctx.fillStyle = PAL.metalD; ctx.fillRect(k.x - 12, k.y - 3, 24, 5); }, 1.6);
+  add(7.6, 9.8, () => plant(7.7, 9.9)); add(13.0, 9.8, () => plant(13.1, 9.9));
+  // server: racks along the back
+  for (let i = 0; i < 5; i++) { const x = 14.8 + i * 1.8; add(x, 7.15, () => rack(x, 7.15, i), 1.2); }
+  // lounge: sofa, coffee table, cafe tables, plants
+  add(1.0, 12.2, () => { box(1.0, 12.2, 3.0, 1.1, 14, PAL.sofa, PAL.sofaD, PAL.sofaD); box(1.0, 12.2, 3.0, 0.35, 26, shade(PAL.sofa, 1.05), PAL.sofaD, PAL.sofaD); }, 2.2);
+  add(1.6, 14.0, () => box(1.6, 14.0, 1.6, 0.8, 11, '#CFD6DD', '#AEB8C2', '#97A2AD'), 1.6);
+  [[10.4,12.4],[13.6,12.4],[10.4,14.8],[13.6,14.8]].forEach(([x,y]) => add(x, y, () => { box(x, y, 1.1, 1.1, 16, PAL.wood1, shade(PAL.wood1, .8), shade(PAL.wood1, .7));
+    [[x-.5,y+.2],[x+1.3,y+.2]].forEach(([cx,cy]) => box(cx, cy, .4, .5, 10, '#D8A24A', '#B9843A', '#9E6F2F')); }, 1.6));
+  add(8.2, 16.0, () => plant(8.3, 16.1)); add(16.0, 12.0, () => plant(16.1, 12.1)); add(4.6, 16.0, () => plant(4.7, 16.1));
+  // elevator room: plant + a bench
+  add(18.0, 15.6, () => plant(18.1, 15.7)); add(22.6, 13.0, () => plant(22.7, 13.1));
+  return items;
+}
+function bookshelf(x, y) { box(x, y, 1.4, 0.5, 46, PAL.wood2, shade(PAL.wood2, .85), shade(PAL.wood2, .7));
+  for (let s = 0; s < 3; s++) { const z = 8 + s * 13; for (let b = 0; b < 6; b++) { const bx = x + 0.1 + b * 0.2; box(bx, y + 0.08, 0.15, 0.34, 9, PAL.book[(b + s) % 5], shade(PAL.book[(b + s) % 5], .8), shade(PAL.book[(b + s) % 5], .7), z); } } }
+function imacDesk(x, y) {
+  box(x, y, 1.6, 0.8, 18, '#E9ECEF', '#CBD2D8', '#B5BEC6');
+  const busy = S.roomBusy.dev > 0; box(x + 0.5, y + 0.15, 0.7, 0.12, 15, '#D5DADF', busy ? PAL.screenOn : PAL.screen, '#B5BEC6', 20);
+  if (busy) { const t = performance.now() / 300; ctx.fillStyle = PAL.code; for (let i = 0; i < 4; i++) { const w = 6 + ((Math.sin(t + i + x) + 1) * 8); const p = P(x + 0.55, y + 0.27, 33 - i * 3); ctx.fillRect(p.x, p.y, w, 1.5); } }
+  box(x + 0.45, y + 1.1, 0.5, 0.5, 10, PAL.metal, PAL.metalD, PAL.metalD);
+}
+function standingScreen(x, y) { box(x, y, 1.6, 0.6, 30, '#DDE2E6', '#C5CCD3', '#AEB7BF'); box(x + 0.2, y + 0.1, 1.2, 0.1, 18, '#C5CCD3', S.roomBusy.search ? '#2A4E6B' : PAL.screen, '#AEB7BF', 30); }
+function rack(x, y, i) { box(x, y, 1.2, 0.7, 52, PAL.rack, shade(PAL.rack, .85), shade(PAL.rack, .7));
+  const speed = S.roomBusy.server > 0 ? 90 : 700; const t = performance.now() / speed;
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 2; c++) { const on = Math.sin(t + r * 1.7 + c * 2.3 + i) > 0.1; const p = P(x + 0.25 + c * 0.45, y + 0.72, 8 + r * 7); ctx.fillStyle = on ? PAL.led : PAL.ledOff; ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3); } }
+function plant(x, y) { box(x, y, 0.5, 0.5, 10, PAL.pot, shade(PAL.pot, .8), shade(PAL.pot, .7)); const c = P(x + 0.25, y + 0.25, 10);
+  [[0,-10,11],[-8,-4,8],[8,-5,8],[-3,-17,7],[5,-14,7]].forEach(([dx, dy, r], i) => ellipse(c.x + dx, c.y + dy, r, r * .8, i % 2 ? PAL.plantD : PAL.plant)); }
+
+// ================================================================ characters
+const S = {
+  index: null, project: null, projectInfo: null, session: null, events: [], progress: null,
+  chars: {}, spots: {}, mode: 'live', cursor: 0, clock: () => Date.now(),
+  replay: {timer: null, vt: 0, speed: 60, last: 0}, pollTimer: null,
+  roomBusy: {}, elev: {open: 0, target: 0, lit: 0}, floorNo: null, static: [],
+};
+const agentTypeOf = actor => { const id = actor.slice(6); const a = ((S.progress || {}).agents || []).find(x => x.id === id); return (a && a.type) || (S.chars[actor] && S.chars[actor].type) || ''; };
+function costumeKind(actor, type) { return actor === 'claude' ? 'claude' : actor === 'user' ? 'user' : (COSTUME[type] ? type : 'other'); }
 function ensureChar(actor, meta) {
-  let c = S.chars[actor];
-  if (c) return c;
-  const el = document.createElement('div'); el.className = 'char';
-  let color = 'var(--c-other)', label = actor, initial = '?';
-  if (actor === 'claude') { color = 'var(--c-claude)'; label = 'Claude'; initial = 'C'; }
-  else if (actor === 'user') { color = 'var(--c-user)'; label = (S.progress && S.progress.user) ? `${S.progress.user} (나)` : '나'; initial = '나'; }
-  else { const type = (meta && meta.agentType) || ''; color = costume(type); label = type ? `${type}` : '에이전트'; initial = (type || 'A')[0].toUpperCase(); }
-  el.innerHTML = `<div class="cue"></div><div class="body" style="background:${color}">${initial}</div><div class="name">${esc(label)}</div>`;
-  $('floor').appendChild(el);
-  c = S.chars[actor] = {actor, room: actor === 'user' ? 'desk' : 'elevator', el, color, label, bubble: null, gone: false, lastKind: null, lastT: 0, busy: null};
+  let c = S.chars[actor]; const isAgent = actor.startsWith('agent:'); if (c) { if (isAgent && meta && meta.agentType && !c.type) { c.type = meta.agentType; c.kind = costumeKind(actor, c.type); c.label = c.type; } return c; }
+  const type = isAgent ? ((meta && meta.agentType) || agentTypeOf(actor)) : '';
+  const kind = costumeKind(actor, type);
+  const label = actor === 'claude' ? 'Claude' : actor === 'user' ? ((S.progress && S.progress.user) ? `${S.progress.user} (나)` : '나') : (type || '에이전트');
+  const hairs = ['#3B2A20', '#1F1A17', '#6B4A2B', '#8C6239', '#2C2C3A', '#A0522D'];
+  c = S.chars[actor] = {actor, type, kind, label, hair: actor.startsWith('agent:') ? hairs[hash(actor) % hairs.length] : null,
+    gx: ELEV.inside[0], gy: ELEV.inside[1], path: [], room: null, spot: null, face: 1, frame: 0, moveT: 0,
+    bubble: null, pose: null, poseUntil: 0, sweatUntil: 0, phoneUntil: 0, book: false, gone: false, hidden: false, lastKind: null, lastT: 0, leaving: null, el: null};
+  if (actor === 'claude') { c.gx = 10.6; c.gy = 9.5; c.room = 'desk'; }
+  if (actor === 'user') { c.gx = USER_SEAT[0]; c.gy = USER_SEAT[1]; c.room = 'desk'; c.seated = true; }
   return c;
 }
-function layoutChars() {
-  const byRoom = {};
-  for (const c of Object.values(S.chars)) { if (c.gone) continue; (byRoom[c.room] ||= []).push(c); }
-  for (const [room, list] of Object.entries(byRoom)) {
-    const r = ROOMS[room] || ROOMS.desk; const n = list.length;
-    list.forEach((c, i) => {
-      const fx = n === 1 ? 0.5 : 0.22 + 0.56 * (i / (n - 1));
-      const fy = room === 'desk' && c.actor === 'user' ? 0.72 : 0.56 - (i % 2) * 0.12;
-      c.el.style.left = `${r.x + r.w * fx}%`; c.el.style.top = `${r.y + r.h * fy}%`;
-    });
+function takeSpot(c, room) {
+  const r = ROOMS[room] || ROOMS.desk; if (c.spot && c.spot.room === room) return c.spot;
+  releaseSpot(c);
+  const used = new Set(Object.values(S.chars).filter(o => o !== c && o.spot && o.spot.room === room).map(o => o.spot.i));
+  let i = 0; while (used.has(i) && i < r.spots.length - 1) i++;
+  const [x, y] = r.spots[i % r.spots.length]; c.spot = {room, i, x: x + (used.has(i) ? 0.6 : 0), y}; return c.spot;
+}
+function releaseSpot(c) { c.spot = null; }
+function walkTo(c, gx, gy, cb) {
+  c.hidden = false; c.leaving = null; c.onArrive = cb || null;
+  const sameRow = Math.abs(gy - c.gy) < 0.01;
+  c.path = sameRow ? [[gx, gy]] : [[gx, c.gy], [gx, gy]];
+  if (Math.abs(gx - c.gx) < 0.01) c.path = [[gx, gy]];
+}
+function goRoom(c, room, cb) { const s = takeSpot(c, room); c.room = room; walkTo(c, s.x, s.y, cb); }
+function tickChars(dt) {
+  const busy = {}; const now = S.clock();
+  for (const c of Object.values(S.chars)) {
+    if (c.gone || c.seated) continue;
+    if (c.path.length) {
+      const [tx, ty] = c.path[0]; const dx = tx - c.gx, dy = ty - c.gy; const dist = Math.hypot(dx, dy); const step = 3.2 * dt;
+      if (dist <= step) { c.gx = tx; c.gy = ty; c.path.shift(); if (!c.path.length && c.onArrive) { const f = c.onArrive; c.onArrive = null; f(); } }
+      else { c.gx += dx / dist * step; c.gy += dy / dist * step; const sx = (dx - dy); if (Math.abs(sx) > 0.01) c.face = sx > 0 ? 1 : -1; }
+      c.moveT += dt; c.frame = 1 + (Math.floor(c.moveT * 7) % 2);
+    } else { c.frame = 0; }
+    if (c.bubble && c.bubble.type === 'tool' && !c.bubble.end && c.room) busy[c.room] = (busy[c.room] || 0) + 1;
   }
-  document.querySelectorAll('.room').forEach(el => el.classList.toggle('hot', !!byRoom[el.id.slice(5)] && byRoom[el.id.slice(5)].some(c => c.actor !== 'user')));
+  S.roomBusy = busy;
+  // elevator doors
+  S.elev.open = lerp(S.elev.open, S.elev.target, Math.min(1, dt * 6));
+  if (S.elev.closeAt && now > S.elev.closeAt) { S.elev.target = 0; S.elev.closeAt = 0; }
+  if (S.elev.lit > 0) S.elev.lit -= dt;
 }
-function moveTo(c, room) {
-  if (!room || c.room === room) return;
-  c.room = room; c.el.classList.add('walking'); layoutChars();
-  clearTimeout(c.walkT); c.walkT = setTimeout(() => c.el.classList.remove('walking'), 1100);
+function drawChar(c) {
+  if (c.gone || c.hidden) return;
+  const now = S.clock();
+  const think = c.pose === 'think' && now < c.poseUntil; const sweat = now < c.sweatUntil;
+  const img = sprite(c.kind, c.seated ? (Math.floor(performance.now() / 180) % 2 ? 1 : 0) * 0 : c.frame, {think, book: c.book && !c.path.length, sweat, hair: c.hair});
+  const p = P(c.gx, c.gy, 0);
+  ellipse(p.x, p.y + 2, 9, 4, PAL.shadow);
+  ctx.save(); ctx.translate(p.x, p.y); if (c.face < 0) ctx.scale(-1, 1);
+  const bob = c.path.length ? Math.abs(Math.sin(c.moveT * 14)) * 2 : 0;
+  const h = c.seated ? img.height * 0.62 : img.height;
+  ctx.drawImage(img, 0, 0, img.width, c.seated ? img.height * 0.62 : img.height, -img.width / 2, -h - bob, img.width, h);
+  ctx.restore();
+  if (now < c.phoneUntil) { ctx.font = `${12}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('📞', p.x + 12, p.y - img.height + 6); }
 }
-function setBubble(c, b) {
-  c.bubble = b;
-  let el = c.el.querySelector('.bubble');
-  if (!b) { if (el) el.remove(); return; }
-  if (!el) { el = document.createElement('div'); c.el.appendChild(el); }
-  el.className = 'bubble ' + (b.type || '');
-  el.innerHTML = `${b.icon ? esc(b.icon) + ' ' : ''}${esc(b.text)}<span class="el"></span>${b.type === 'err' ? '<span class="sweat">💦</span>' : ''}`;
+function render() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(cam.ox, cam.oy); ctx.scale(cam.z, cam.z);
+  drawFloors(); drawBackWalls();
+  const items = S.static.slice();
+  for (const c of Object.values(S.chars)) if (!c.gone && !c.hidden) items.push({d: c.gx + c.gy + (c.seated ? -0.6 : 0.3), draw: () => drawChar(c)});
+  items.sort((a, b) => a.d - b.d);
+  for (const it of items) it.draw();
 }
-function tickBubbles() {
+
+// ---- HTML overlay: bubbles, name tags, room labels, elevator indicator
+const ov = {bubbles: {}, tags: {}, labels: {}, ind: null};
+function syncOverlay() {
+  if (!ov.ind) { ov.ind = document.createElement('div'); ov.ind.className = 'elev-ind'; overlay.appendChild(ov.ind);
+    for (const [k, r] of Object.entries(ROOMS)) { const l = document.createElement('div'); l.className = 'roomlabel'; l.innerHTML = `${r.ko}<small>${r.en}</small>`; overlay.appendChild(l); ov.labels[k] = l; } }
+  for (const [k, r] of Object.entries(ROOMS)) { const p = toScreen(r.x + r.w * 0.5, r.y + r.h * 0.94, 0); const l = ov.labels[k]; l.style.transform = `translate(${p.x}px,${p.y}px) translate(-50%,-50%)`; l.style.opacity = cam.z < cam.fitZ * 0.75 ? 0 : 1; }
+  const ep = toScreen(ELEV.door[0] + 1, ELEV.door[1] + 0.2, 82); ov.ind.style.transform = `translate(${ep.x}px,${ep.y}px) translate(-50%,-100%)`;
   const now = S.clock();
   for (const c of Object.values(S.chars)) {
-    if (!c.bubble) continue;
-    const el = c.el.querySelector('.bubble .el'); if (!el) continue;
-    const b = c.bubble;
-    if (b.start && !b.end) el.textContent = `· ${fmtDur(now - b.start)}`;
-    else if (b.start && b.end) el.textContent = `· ${fmtDur(b.end - b.start)}`;
-    if (b.expire && now >= b.expire) setBubble(c, null);
+    const show = !c.gone && !c.hidden;
+    let tag = ov.tags[c.actor]; if (!tag) { tag = ov.tags[c.actor] = document.createElement('div'); tag.className = 'tag'; overlay.appendChild(tag); }
+    const colorVar = c.actor === 'claude' ? '--c-claude' : c.actor === 'user' ? '--c-user' : ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[c.type] || '--c-other';
+    tag.innerHTML = `<i style="background:var(${colorVar})"></i>${esc(c.label)}`;
+    const fp = toScreen(c.gx, c.gy, 0); tag.style.transform = `translate(${fp.x}px,${fp.y + 4 * cam.z}px) translate(-50%,0)`; tag.hidden = !show;
+    let b = ov.bubbles[c.actor];
+    if (c.bubble && show) {
+      if (!b) { b = ov.bubbles[c.actor] = document.createElement('div'); overlay.appendChild(b); }
+      if (b.dataset.key !== c.bubble.key) { b.dataset.key = c.bubble.key; b.className = 'bubble ' + (c.bubble.type || '') + (c.actor === 'user' ? ' user' : ''); b.innerHTML = `${c.bubble.icon ? esc(c.bubble.icon) + ' ' : ''}${esc(c.bubble.text)}<span class="el"></span>`; }
+      const el = b.querySelector('.el'); const bb = c.bubble;
+      if (bb.start && !bb.end) el.textContent = bb.type === 'think' ? ` · ${fmtS(now - bb.start)}째` : ` · ${fmtS(now - bb.start)}`;
+      else if (bb.start && bb.end) el.textContent = ` · ${fmtDur(bb.end - bb.start)} ✓`;
+      const hp = toScreen(c.gx, c.gy, (c.seated ? 28 : 44) * 1); b.style.transform = `translate(${hp.x}px,${hp.y - 6}px) translate(-50%,-100%)`;
+      if (bb.expire && now >= bb.expire) c.bubble = null;
+    } else if (b) { b.remove(); delete ov.bubbles[c.actor]; }
   }
-  // "고민 중": nothing has come back from the model since the last prompt / tool_done
+  // inferred "고민 중" while the model is working and nothing has come back yet
   const cl = S.chars.claude;
-  if (cl && !cl.gone && S.mode === 'live' && S.progress && S.progress.status === 'active' && !cl.bubble &&
-      (cl.lastKind === 'prompt' || cl.lastKind === 'tool_done') && now - cl.lastT > 1500) {
-    setBubble(cl, {type: 'think', icon: '💭', text: '고민 중', start: cl.lastT});
+  if (cl && !cl.gone && !cl.bubble && S.mode === 'live' && S.progress && S.progress.status === 'active' && (cl.lastKind === 'prompt' || cl.lastKind === 'tool_done') && now - cl.lastT > 1500) {
+    setBubble(cl, {type: 'think', icon: '💭', text: '고민 중', start: cl.lastT}); cl.pose = 'think'; cl.poseUntil = Infinity;
   }
 }
+let bubbleSeq = 0;
+function setBubble(c, b) { if (b) b.key = String(++bubbleSeq); c.bubble = b; if (b && b.type !== 'think' && c.pose === 'think') { c.pose = null; } }
 
-// ------------------------------------------------------------------ apply one event to the floor
+// ================================================================ events → acting
 function applyEvent(e, instant) {
-  const dwell = instant ? 0 : 1;
-  const a = e.actor;
-  if (e.kind === 'session_start') { const c = ensureChar('claude'); ensureChar('user'); c.room = 'desk'; c.gone = false; layoutChars(); return; }
-  if (a === 'user') {
+  const dwell = instant ? 0 : 1; const now = S.clock();
+  if (e.kind === 'session_start') { const c = ensureChar('claude'); ensureChar('user'); if (instant) { c.gx = 10.6; c.gy = 9.5; c.room = 'desk'; } return; }
+  if (e.actor === 'user') {
     const u = ensureChar('user');
-    setBubble(u, {type: 'say', icon: e.kind === 'interrupt' ? '✋' : '⌨️', text: e.caption || '…', expire: S.clock() + (dwell ? 6000 : -1)});
-    if (!dwell) setBubble(u, null);
-    const cl = S.chars.claude; if (cl) { setBubble(cl, null); cl.lastKind = 'prompt'; cl.lastT = tsOf(e); }
+    setBubble(u, {type: 'say', icon: e.kind === 'interrupt' ? '✋' : '⌨️', text: e.caption || '…', expire: now + (dwell ? 7000 : -1)});
+    const cl = S.chars.claude; if (cl) { setBubble(cl, null); cl.lastKind = 'prompt'; cl.lastT = tsOf(e); cl.pose = null; if (e.kind === 'interrupt') { cl.path = []; } }
+    if (!dwell) u.bubble = null;
     return;
   }
-  const c = ensureChar(a, e.meta);
-  c.lastKind = e.kind; c.lastT = tsOf(e);
+  const c = ensureChar(e.actor, e.meta); c.lastKind = e.kind; c.lastT = tsOf(e);
   switch (e.kind) {
-    case 'spawn':
-      c.gone = false; c.el.classList.remove('gone'); c.room = 'elevator'; layoutChars();
-      setBubble(c, {type: 'say', icon: '🛗', text: `출근: ${e.caption || ''}`, expire: S.clock() + (dwell ? 4000 : -1)});
-      break;
-    case 'finish':
-      moveTo(c, 'desk');
-      setBubble(c, {type: 'say', icon: '✅', text: e.caption || '끝났습니다', expire: S.clock() + (dwell ? 7000 : -1)});
-      clearTimeout(c.byeT);
-      c.byeT = setTimeout(() => { if (!c.gone) { setBubble(c, {type: 'say', icon: '👋', text: '퇴근합니다!'}); moveTo(c, 'elevator');
-        setTimeout(() => { c.gone = true; c.el.classList.add('gone'); layoutChars(); }, 1600); } }, dwell ? 7000 : 0);
-      if (!dwell) { c.gone = true; c.el.classList.add('gone'); }
-      break;
-    case 'say':
-      setBubble(c, {type: 'say', text: e.caption || ''}); break;
-    case 'think':
-      setBubble(c, {type: 'think', icon: '💭', text: `${fmtDur(e.dur_ms || 0)} 고민함`, expire: S.clock() + (dwell ? 2500 : -1)}); break;
-    case 'tool':
-      moveTo(c, e.room);
-      setBubble(c, {type: 'tool', icon: toolIcon(e.tool), text: e.caption || e.tool, start: tsOf(e), ref: e.ref}); break;
-    case 'tool_done':
-      if (c.bubble && c.bubble.ref === e.ref) { c.bubble.end = tsOf(e); c.bubble.expire = S.clock() + (dwell ? 2500 : -1); }
-      break;
-    case 'tool_err':
-      setBubble(c, {type: 'err', icon: '❌', text: e.caption || '오류', expire: S.clock() + (dwell ? 6000 : -1)}); break;
-    case 'interrupt':
-      setBubble(c, null); break;
+    case 'spawn': {
+      c.gone = false; c.hidden = !instant; c.gx = ELEV.inside[0]; c.gy = ELEV.inside[1]; c.room = 'elevator'; c.book = false;
+      const cl = S.chars.claude; if (cl) cl.phoneUntil = now + (dwell ? 2500 : 0);
+      if (instant) { c.gx = ELEV.out[0]; c.gy = ELEV.out[1]; }
+      else { S.elev.target = 1; S.elev.lit = 2; S.elev.closeAt = now + 2600; setTimeout(() => { c.hidden = false; walkTo(c, ELEV.out[0], ELEV.out[1]); }, 500); }
+      setBubble(c, {type: 'say', icon: '🛗', text: `출근! ${e.caption || ''}`, expire: now + (dwell ? 5000 : -1)});
+      break; }
+    case 'finish': {
+      const cl = S.chars.claude; const tx = cl ? cl.gx + 1.0 : 11.6, ty = cl ? cl.gy + 0.1 : 9.6;
+      releaseSpot(c); c.book = false; c.room = cl ? cl.room : 'desk';
+      const report = () => { setBubble(c, {type: 'say', icon: '📣', text: e.caption || '끝났습니다', expire: now + (dwell ? 7000 : -1)});
+        c.leaving = setTimeout(() => leaveOffice(c), dwell ? 7000 : 0); };
+      if (instant) { c.gone = true; } else walkTo(c, tx, ty, report);
+      break; }
+    case 'say': setBubble(c, {type: 'say', text: e.caption || ''}); c.pose = null; break;
+    case 'think': setBubble(c, {type: 'think', icon: '💭', text: `${fmtDur(e.dur_ms || 0)} 고민함`, expire: now + (dwell ? 3000 : -1)}); c.pose = 'think'; c.poseUntil = now + (dwell ? 3000 : -1); break;
+    case 'tool': {
+      if (c.leaving) { clearTimeout(c.leaving); c.leaving = null; }
+      const tool = e.tool || '';
+      if (tool === 'Agent' || tool === 'Task') { c.phoneUntil = now + (dwell ? 3000 : 0); setBubble(c, {type: 'tool', icon: '📞', text: e.caption || '일 맡기는 중', start: tsOf(e), ref: e.ref}); break; }
+      const room = e.room && ROOMS[e.room] && e.room !== 'elevator' ? e.room : 'server';
+      c.book = room === 'archive';
+      if (c.room !== room || !c.spot) { if (instant) { const s = takeSpot(c, room); c.room = room; c.gx = s.x; c.gy = s.y; c.path = []; } else goRoom(c, room); }
+      setBubble(c, {type: 'tool', icon: toolIcon(tool), text: e.caption || tool, start: tsOf(e), ref: e.ref}); c.pose = null;
+      break; }
+    case 'tool_done': if (c.bubble && c.bubble.ref === e.ref) { c.bubble.end = tsOf(e); c.bubble.expire = now + (dwell ? 2200 : -1); } break;
+    case 'tool_err': setBubble(c, {type: 'err', icon: '❌', text: e.caption || '오류', expire: now + (dwell ? 6000 : -1)}); c.sweatUntil = now + (dwell ? 6000 : 0); break;
   }
-  if (!dwell && c.bubble && c.bubble.expire) setBubble(c, null);
+  if (!dwell && c.bubble && c.bubble.expire) c.bubble = null;
 }
-function resetFloor() {
-  for (const c of Object.values(S.chars)) c.el.remove();
-  S.chars = {}; S.cursor = 0; ensureChar('user'); layoutChars();
+function leaveOffice(c) {
+  setBubble(c, {type: 'say', icon: '👋', text: '퇴근합니다!'}); releaseSpot(c); c.room = 'elevator';
+  walkTo(c, ELEV.out[0], ELEV.out[1], () => { S.elev.target = 1; S.elev.lit = 2; S.elev.closeAt = S.clock() + 2400;
+    setTimeout(() => walkTo(c, ELEV.inside[0], ELEV.inside[1], () => { c.gone = true; c.bubble = null; }), 500); });
 }
+function resetFloor() { for (const c of Object.values(S.chars)) { if (c.leaving) clearTimeout(c.leaving); } S.chars = {}; S.cursor = 0; S.elev = {open: 0, target: 0, lit: 0}; ensureChar('user'); }
 
-// ------------------------------------------------------------------ right rail
+// ================================================================ panels
 function renderProgress() {
   const p = S.progress; if (!p) return;
   const pr = p.progress || {}; const ratio = pr.ratio == null ? 0 : pr.ratio;
@@ -404,62 +636,80 @@ function renderProgress() {
   $('k-commits').textContent = (p.git && p.git.commits || []).length;
   $('k-files').textContent = (p.git && p.git.filesChanged || []).length;
   $('k-tools').textContent = (p.counters || {}).toolCalls || 0;
-  $('k-think').textContent = fmtDur((p.counters || {}).think_ms || 0).replace(/\.\d+s/, 's');
+  $('k-think').textContent = fmtS((p.counters || {}).think_ms || 0);
   $('tasks').innerHTML = (p.tasks || []).map(t => `<li class="task ${esc(t.status)}"><span class="st">${t.status === 'completed' ? '✓' : ''}</span><span class="tid">#${esc(t.id)}</span><span class="tx">${esc(t.text)}</span></li>`).join('') || '<li class="note">아직 등록된 할 일이 없습니다</li>';
-  const files = (p.git && p.git.filesChanged || []).slice(0, 10);
-  const commits = (p.git && p.git.commits || []);
+  const files = (p.git && p.git.filesChanged || []).slice(0, 10); const commits = (p.git && p.git.commits || []);
   $('files').innerHTML = (commits.length ? `<span>커밋 ${commits.length}개 · 최근: ${esc(commits[commits.length - 1].msg || '')}</span>` : '<span>이 세션에서 커밋 없음</span>') + files.map(f => `<span>${esc(f)}</span>`).join('');
-  const st = $('t-status'); st.className = 'pill ' + p.status; st.innerHTML = `<span class="dot ${p.status === 'active' ? 'live' : ''}"></span><span>${({active:'LIVE', idle:`쉬는 중 · ${fmtRel(p.lastAt)}`, ended:'종료'})[p.status] || p.status}</span>`;
+  const st = $('t-status'); st.className = 'pill ' + p.status; st.innerHTML = `<span class="lamp ${p.status === 'active' ? 'on' : ''}"></span><span>${({active: 'LIVE', idle: '쉬는 중', ended: '종료'})[p.status] || p.status}</span>`;
+  $('r-project').textContent = S.project || '—'; $('r-session').textContent = S.session || '—'; $('r-last').textContent = `${fmtRel(p.lastAt)} · ${(p.versions || []).join(', ')}`;
 }
 function renderPeople() {
-  const p = S.progress || {}; const list = [];
-  const last = {}; const counts = {};
-  for (const e of S.events.slice(0, S.mode === 'replay' ? S.cursor : S.events.length)) {
-    if (e.kind === 'tool') counts[e.actor] = (counts[e.actor] || 0) + 1;
-    if (['say', 'tool', 'think', 'spawn', 'finish', 'tool_err'].includes(e.kind)) last[e.actor] = e;
-  }
-  const row = (actor, name, color, sub) => { const e = last[actor]; const roomKo = e && e.room ? ROOMS[e.room].ko : (S.chars[actor] ? ROOMS[S.chars[actor].room].ko : '');
-    return `<div class="person"><div class="av" style="background:${color}">${esc((name[0] || '?').toUpperCase())}</div><div style="min-width:0"><div class="pn">${esc(name)}<small>${esc(sub || '')}</small></div><div class="pc">${e ? `${roomKo ? roomKo + ' · ' : ''}${esc(e.caption || e.kind)}` : '—'}</div></div><div class="pm">도구 ${counts[actor] || 0}회</div></div>`; };
-  list.push(row('claude', 'Claude', 'var(--c-claude)', shortId(S.session)));
-  for (const ag of (p.agents || [])) list.push(row('agent:' + ag.id, ag.type || '에이전트', costume(ag.type), ag.status === 'done' ? '퇴근' : '근무 중'));
-  $('people').innerHTML = list.join('');
-  $('p-count').textContent = `· ${list.length}명`;
+  const p = S.progress || {}; const upto = S.mode === 'replay' ? S.cursor : S.events.length;
+  const last = {}, counts = {}, since = {};
+  for (const e of S.events.slice(0, upto)) { if (e.kind === 'tool') counts[e.actor] = (counts[e.actor] || 0) + 1; if (['say', 'tool', 'think', 'spawn', 'finish', 'tool_err', 'tool_done'].includes(e.kind)) last[e.actor] = e; }
+  const now = S.clock();
+  const row = (actor, name, colorVar, sub, done) => { const e = last[actor]; const c = S.chars[actor];
+    let badge = '대기', cls = ''; if (done) badge = '퇴근'; else if (c && c.bubble && c.bubble.type === 'err') { badge = '오류'; cls = 'err'; } else if (c && c.bubble && c.bubble.type === 'think') { badge = '고민 중'; cls = 'think'; } else if (c && c.bubble && c.bubble.type === 'tool' && !c.bubble.end) { badge = '작업 중'; cls = 'work'; }
+    const room = c && c.room ? ROOMS[c.room].ko : ''; const what = e ? (e.kind === 'think' ? `💭 ${fmtDur(e.dur_ms || 0)} 고민` : `${e.kind === 'tool' || e.kind === 'tool_done' ? toolIcon(e.tool) + ' ' : ''}${e.caption || e.tool || e.kind}`) : '—';
+    return `<div class="person"><div class="av" style="background:var(${colorVar})">${esc((name[0] || '?').toUpperCase())}</div><div style="min-width:0"><div class="l1"><span class="nm">${esc(name)}</span><span class="sub">${esc(sub || '')}</span><span class="badge ${cls}">${badge}</span></div><div class="l2">${room ? `<span style="color:var(--muted)">${esc(room)}</span> · ` : ''}${esc(what)}</div><div class="l3">도구 ${counts[actor] || 0}회${e ? ` · ${fmtS(Math.max(0, now - tsOf(e)))}` : ''}</div></div></div>`; };
+  const list = [row('claude', 'Claude', '--c-claude', shortId(S.session))];
+  const descOf = id => { const a = (p.agents || []).find(x => x.id === id); return a ? (a.text || '').slice(0, 24) : ''; };
+  for (const c of Object.values(S.chars)) { if (!c.actor.startsWith('agent:')) continue; const type = c.type || agentTypeOf(c.actor);
+    list.push(row(c.actor, type || '에이전트', ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[type] || '--c-other', descOf(c.actor.slice(6)), c.gone)); }
+  $('people').innerHTML = list.join(''); $('p-count').textContent = `${list.length}명 근무`;
 }
 function renderLog() {
   const upto = S.mode === 'replay' ? S.cursor : S.events.length;
-  const rows = S.events.slice(0, upto).filter(e => !['tool_done', 'session_start'].includes(e.kind)).slice(-40).reverse();
-  $('log').innerHTML = rows.map(e => { const color = e.actor === 'claude' ? 'var(--c-claude)' : e.actor === 'user' ? 'var(--c-user)' : costume((e.meta || {}).agentType || ((S.progress || {}).agents || []).find(a => 'agent:' + a.id === e.actor)?.type);
-    const text = e.kind === 'think' ? `💭 ${fmtDur(e.dur_ms || 0)} 고민` : e.kind === 'tool' ? `${toolIcon(e.tool)} ${e.caption || e.tool}` : e.kind === 'tool_err' ? `❌ ${e.caption || ''}` : e.kind === 'spawn' ? `🛗 출근 · ${e.caption || ''}` : e.kind === 'finish' ? `👋 퇴근 · ${e.caption || ''}` : e.caption || e.kind;
-    return `<li><span class="lt">${fmtClock(tsOf(e))}</span><span class="la" style="background:${color}"></span><span class="lc ${e.kind === 'say' ? 'say' : ''}">${esc(text)}</span></li>`; }).join('') || '<li class="note">아직 활동이 없습니다</li>';
+  const rows = S.events.slice(0, upto).filter(e => !['tool_done', 'session_start'].includes(e.kind)).slice(-50).reverse();
+  $('log').innerHTML = rows.map(e => { const t = e.actor === 'claude' ? ['C', '--c-claude'] : e.actor === 'user' ? ['나', '--c-user'] : [((e.meta || {}).agentType || agentTypeOf(e.actor) || 'A')[0], ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[(e.meta || {}).agentType || agentTypeOf(e.actor)] || '--c-other'];
+    const text = e.kind === 'think' ? `💭 ${fmtDur(e.dur_ms || 0)} 고민` : e.kind === 'tool' ? `${toolIcon(e.tool)} ${e.room && ROOMS[e.room] ? ROOMS[e.room].ko + ' · ' : ''}${e.caption || e.tool}` : e.kind === 'tool_err' ? `❌ ${e.caption || ''}` : e.kind === 'spawn' ? `🛗 출근 · ${e.caption || ''}` : e.kind === 'finish' ? `👋 퇴근 · ${e.caption || ''}` : e.kind === 'interrupt' ? '✋ 잠깐, 멈춰!' : e.caption || e.kind;
+    return `<li><span class="lt">${fmtClock(tsOf(e))}</span><span class="la" style="background:var(${t[1]})">${esc(t[0])}</span><span class="lc ${e.kind === 'say' || e.kind === 'prompt' ? 'say' : ''}">${esc(text)}</span></li>`; }).join('') || '<li class="note">아직 활동이 없습니다</li>';
 }
-
-// ------------------------------------------------------------------ floor guide
 function renderFloors() {
-  const projects = (S.index && S.index.projects) || [];
-  $('floors').innerHTML = projects.map((p, i) => `<li class="floor-item ${p.name === S.project ? 'sel' : ''}" tabindex="0" data-p="${esc(p.name)}"><span class="floor-no">${projects.length - i}F</span><div style="min-width:0"><div class="floor-name">${esc(p.name)}</div><div class="floor-sub"><span class="dot ${p.active ? 'live' : ''}"></span>세션 ${p.sessions}개 · ${p.active ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`).join('') || '<li class="empty">아직 올라온 프로젝트가 없습니다</li>';
-  $('floors').querySelectorAll('.floor-item').forEach(el => { const go = () => selectProject(el.dataset.p); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') go(); }; });
+  const projects = (S.index && S.index.projects) || []; const N = projects.length;
+  $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0; return `<li class="floor ${p.name === S.project ? 'sel' : ''}" tabindex="0" data-p="${esc(p.name)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || '<li class="empty">아직 올라온 프로젝트가 없습니다</li>';
+  $('floors').querySelectorAll('.floor').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
-  $('sessions').innerHTML = list.map(s => `<li class="ses-item ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="ses-id">${shortId(s.session)}</span><span class="pill ${s.status}">${s.status === 'active' ? 'LIVE' : s.status === 'ended' ? '종료' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
-  $('sessions').querySelectorAll('.ses-item').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') go(); }; });
+  $('ses-n').textContent = list.length ? `${list.length}개` : '';
+  $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${s.status === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
+  $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
+function renderLegend() { $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:${floorFill(ROOMS[k].floor)}"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join(''); }
 
-// ------------------------------------------------------------------ loading & modes
+// ================================================================ loading & modes
 async function boot() {
-  buildFloor();
+  PAL = isDark() ? PALETTE.dark : PALETTE.light; renderLegend();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { PAL = isDark() ? PALETTE.dark : PALETTE.light; S.static = buildStatic(); renderLegend(); });
+  new MutationObserver(() => { PAL = isDark() ? PALETTE.dark : PALETTE.light; S.static = buildStatic(); renderLegend(); }).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+  resize(); fitCamera(); S.static = buildStatic(); ensureChar('user');
   try { S.index = await getJSON('index.json'); } catch (e) { S.index = {projects: []}; }
   renderFloors();
-  const first = (S.index.projects || []).find(p => p.active) || (S.index.projects || [])[0];
-  if (first) await selectProject(first.name); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
-  setInterval(tickBubbles, 500);
-  setInterval(() => { if (S.mode === 'live') { renderFloors(); renderSessions(); renderProgress(); } }, 30000);
+  const projects = S.index.projects || []; const i = Math.max(0, projects.findIndex(p => p.active));
+  if (projects.length) await selectProject(projects[i].name, projects.length - i, false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
+  setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
+  let last = performance.now();
+  (function loop(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; tickChars(dt); render(); syncOverlay(); requestAnimationFrame(loop); })(last);
+  setInterval(() => { if (S.mode === 'live') renderPeople(); }, 1000);
 }
-async function selectProject(name) {
-  S.project = name; renderFloors();
+async function followLatest() {
+  try { S.index = await getJSON('index.json'); } catch (e) { return; }
+  renderFloors();
+  if (!$('follow').checked) return;
+  const projects = S.index.projects || []; const active = projects.find(p => p.active);
+  if (active && active.name !== S.project) { await selectProject(active.name, projects.length - projects.indexOf(active), true); return; }
+  try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { return; }
+  renderSessions();
+  const newest = (S.projectInfo.sessions || [])[0];
+  if (newest && newest.session !== S.session && (newest.status === 'active' || !(S.progress && S.progress.status === 'active'))) await selectSession(newest.session);
+}
+async function selectProject(name, no, showIndicator) {
+  S.project = name; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
+  if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
   try { S.projectInfo = await getJSON(`${name}/project.json`); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
-  const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); }
+  const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
 async function selectSession(ses) {
   S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
@@ -468,48 +718,40 @@ async function selectSession(ses) {
   clearInterval(S.pollTimer); S.pollTimer = setInterval(() => { if (S.mode === 'live') refresh(false); }, POLL_MS);
 }
 async function refresh(full) {
-  let progress = null, events = [];
-  try { progress = await getJSON(`${S.project}/${S.session}.progress.json`); } catch (e) { /* keep old */ }
+  let progress = null, events = null;
+  try { progress = await getJSON(`${S.project}/${S.session}.progress.json`); } catch (e) { /* keep */ }
   try { events = await getEvents(`${S.project}/${S.session}.events.jsonl`); } catch (e) { events = S.events; }
   if (progress) S.progress = progress;
-  const known = S.events.length;
-  S.events = events;
-  if (full || known === 0) { resetFloor(); for (const e of events) applyEvent(e, true); S.cursor = events.length; }
-  else { const fresh = events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 350)); S.cursor = events.length; }
-  renderProgress(); renderPeople(); renderLog(); layoutChars();
-  if (S.events.length) { const cl = S.chars.claude; const last = S.events[S.events.length - 1]; if (cl && !['tool', 'say'].includes(last.kind)) { cl.lastKind = last.kind === 'prompt' ? 'prompt' : 'tool_done'; cl.lastT = tsOf(last); } }
+  const known = S.events.length; S.events = events || [];
+  if (full || known === 0 || S.events.length < known) { resetFloor(); for (const e of S.events) applyEvent(e, true); S.cursor = S.events.length; }
+  else { const fresh = S.events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 400)); S.cursor = S.events.length; }
+  S.static = buildStatic(); renderProgress(); renderPeople(); renderLog();
+  const cl = S.chars.claude; const lastE = S.events[S.events.length - 1];
+  if (cl && lastE && !['tool', 'say'].includes(lastE.kind)) { cl.lastKind = lastE.kind === 'prompt' ? 'prompt' : 'tool_done'; cl.lastT = tsOf(lastE); }
 }
-
-// ---- replay: virtual clock, gaps capped so a quiet hour does not take a minute
 function startReplay() {
   if (!S.events.length) return;
   stopReplay(); S.mode = 'replay'; $('b-live').classList.remove('on'); $('b-replay').classList.add('on'); $('scrub').hidden = false;
-  resetFloor(); const r = S.replay; r.speed = +$('speed').value; r.vt = tsOf(S.events[0]); r.last = performance.now();
-  S.clock = () => r.vt;
-  $('s-range').max = S.events.length; $('s-range').value = 0;
+  resetFloor(); const r = S.replay; r.speed = +$('speed').value; r.vt = tsOf(S.events[0]); r.last = performance.now(); r.jumpFor = -1; S.clock = () => r.vt;
+  $('s-range').max = S.events.length; $('s-range').value = 0; renderPeople(); renderLog();
   r.timer = setInterval(stepReplay, 100);
 }
 function stepReplay() {
   const r = S.replay; const now = performance.now(); const dt = (now - r.last) * r.speed; r.last = now;
-  const next = S.events[S.cursor];
-  if (!next) { stopReplay(true); return; }
+  const next = S.events[S.cursor]; if (!next) { stopReplay(true); return; }
   const target = tsOf(next);
-  r.vt = Math.min(r.vt + dt, Math.max(target, r.vt + Math.min(dt, 2000 * r.speed / 60)));  // cap long gaps at ~2s real time
-  if (r.vt < target) { $('s-time').textContent = fmtClock(r.vt); return; }
-  while (S.cursor < S.events.length && tsOf(S.events[S.cursor]) <= r.vt) { applyEvent(S.events[S.cursor], false); S.cursor++; }
-  $('s-range').value = S.cursor; $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt);
-  renderPeople(); renderLog();
+  if (r.jumpFor !== S.cursor) { r.jumpFor = S.cursor; r.jump = (target - r.vt) / 20; }   // a quiet gap costs at most ~2s of real time
+  const gap = target - r.vt; const adv = Math.max(dt, r.jump);
+  r.vt = gap <= adv ? target : r.vt + adv;
+  $('s-time').textContent = fmtClock(r.vt);
+  if (r.vt < target) return;
+  let n = 0; while (S.cursor < S.events.length && tsOf(S.events[S.cursor]) <= r.vt && n < 6) { applyEvent(S.events[S.cursor], false); S.cursor++; n++; }
+  $('s-range').value = S.cursor; $('s-count').textContent = `${S.cursor}/${S.events.length}`; renderPeople(); renderLog();
 }
-function stopReplay(finished) {
-  const r = S.replay; clearInterval(r.timer); r.timer = null; S.clock = () => Date.now();
-  if (finished) { $('b-replay').classList.remove('on'); $('s-count').textContent = `${S.events.length}/${S.events.length} · 끝`; }
-}
-function seekReplay(n) {
-  const r = S.replay; resetFloor(); S.cursor = 0;
-  for (let i = 0; i < n; i++) { applyEvent(S.events[i], true); S.cursor++; }
-  r.vt = n ? tsOf(S.events[n - 1]) : tsOf(S.events[0]); r.last = performance.now();
-  $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt); renderPeople(); renderLog();
-}
+function stopReplay(finished) { const r = S.replay; clearInterval(r.timer); r.timer = null; S.clock = () => Date.now();
+  if (finished) { $('b-replay').classList.remove('on'); $('s-count').textContent = `${S.events.length}/${S.events.length} · 끝`; } }
+function seekReplay(n) { const r = S.replay; resetFloor(); S.cursor = 0; for (let i = 0; i < n; i++) { applyEvent(S.events[i], true); S.cursor++; }
+  r.vt = n ? tsOf(S.events[n - 1]) : tsOf(S.events[0]); r.last = performance.now(); r.jumpFor = -1; $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt); renderPeople(); renderLog(); }
 $('b-live').onclick = () => { if (S.mode === 'live') return; stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true; refresh(true); };
 $('b-replay').onclick = () => startReplay();
 $('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
