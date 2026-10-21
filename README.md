@@ -31,6 +31,8 @@ Claude와 서브에이전트가 방을 오가며 일하는 모습(캐릭터·말
 | `hooks/` | 세션 시작 시 추출기를 띄우는 훅과 git 푸셔 |
 | `viewer/index.html` | 단일 파일 아이소메트릭 뷰어 (캔버스로 그림, 이미지 에셋 없음, 정적 호스팅용) |
 | `viewer/build_preview.py` | 데이터를 내장한 미리보기 HTML 생성 |
+| `functions/auth/` | Cloudflare Pages Functions: GitHub 로그인 코드 교환·갱신 |
+| `docs/` | 호스팅·로그인 설정 절차 |
 | `fixtures/session-sample/` | 실제 세션을 값만 잘라낸 테스트 픽스처 |
 | `tests/` | pytest |
 
@@ -119,6 +121,6 @@ allow-list 방식이다. 밖으로 나가는 문자열은 캡션뿐이고, 캡�
 
 `viewer/`에는 `manifest.webmanifest`, `sw.js`, `icons/`가 같이 있다. https로 호스팅되면 iPhone·Android에서 "홈 화면에 추가"로 앱처럼 열리고, 마지막 상태가 캐시돼 오프라인에서도 직전 사무실이 먼저 뜬다. 760px 이하에서는 사무실이 화면 폭 전체를 쓰고(핀치 줌·드래그), 진행도/사람/로그/층은 아래 탭으로 바뀐다. ◎ 버튼은 Claude 위치로 화면을 옮긴다.
 
-## 프로젝트별 접근 권한
+## 프로젝트별 접근 권한 (GitHub 로그인)
 
-접근 권한 단위가 프로젝트라서 **data repo는 프로젝트당 하나**다(`OFFICE_DATA_REPO`가 프로젝트마다 다름). 참여자 = 그 repo의 collaborator. 뷰어 로그인은 Cloudflare Pages + Access(이메일 코드/Google 로그인, 참여자 이메일 목록) 또는 GitHub 로그인 중 선택. 권한 없는 층은 이름만 보이고 잠긴다.
+접근 권한 단위가 프로젝트라서 **data repo는 프로젝트당 하나**다(`OFFICE_DATA_REPO`가 프로젝트마다 다름). 참여자 = 그 repo의 collaborator. 뷰어는 GitHub 로그인 후 본인 토큰(GitHub App, Contents 읽기 전용)으로 collaborator인 data repo만 층으로 읽는다. 권한 없는 층은 이름만 보이고 잠긴다. 설정 절차는 `docs/hosting-github-login.md`.

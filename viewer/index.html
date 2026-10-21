@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Office">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="config.js"></script>
 <!--OFFICE:PWA-END-->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
 <style>
@@ -94,6 +95,11 @@ h2 .n{font-family:var(--mono);font-weight:400;letter-spacing:0;text-transform:no
 .topbar .title .no{font-family:var(--mono);font-size:11px;background:var(--ink);color:var(--paper);border-radius:6px;padding:1px 6px}
 .topbar .sub{color:var(--muted);font-family:var(--mono);font-size:11px}
 .controls{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.auth{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.auth img{width:22px;height:22px;border-radius:50%;border:1px solid var(--line)}
+.auth a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.floor.locked{opacity:.55;cursor:default} .floor.locked .no{background:var(--paper);color:var(--muted)}
+.signin{padding:28px 16px;text-align:center;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:10px;align-items:center}
 .btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:500}
 .btn:hover{border-color:var(--line-strong)} .btn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn:focus-visible,.floor:focus-visible,.ses:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -188,6 +194,7 @@ select.btn{padding:4px 6px}
         <span class="title"><span class="no" id="t-floor">—</span><span id="t-project">Agent Office</span></span>
         <span class="sub" id="t-session"></span>
         <span class="pill" id="t-status"><span class="lamp"></span><span>…</span></span>
+        <span class="auth" id="auth"></span>
         <div class="controls">
           <button class="btn on" id="b-live" type="button">라이브</button>
           <button class="btn" id="b-replay" type="button">▶ 다시보기</button>
@@ -247,17 +254,71 @@ select.btn{padding:4px 6px}
 const BASE = (window.OFFICE_DATA_BASE || 'data').replace(/\/$/, '');
 const EMB = window.OFFICE_DATA || null;
 const POLL_MS = window.OFFICE_POLL_MS || 10000;
+const MODE = EMB ? 'static' : (window.OFFICE_MODE || 'static');       // 'github': floors = data repos the viewer can read
+const parseJSONL = t => t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+
+// ---- GitHub mode: the signed-in person's own token (GitHub App, Contents: read) reads the data repos directly.
+const GHUB = {api: 'https://api.github.com', token: null, exp: 0, ref: null, user: null, etags: new Map()};
+function ghLoad() { try { const v = JSON.parse(localStorage.getItem('office.gh') || 'null'); if (v && v.gh && v.exp > Date.now()) { GHUB.token = v.gh; GHUB.exp = v.exp; GHUB.ref = v.ref || null; } } catch (e) { /* no storage */ } }
+function ghSave() { try { if (GHUB.token) localStorage.setItem('office.gh', JSON.stringify({gh: GHUB.token, exp: GHUB.exp, ref: GHUB.ref})); else localStorage.removeItem('office.gh'); } catch (e) { /* no storage */ } }
+function ghFromHash() {
+  if (!location.hash.startsWith('#gh=')) return false;
+  const q = new URLSearchParams(location.hash.slice(1)); GHUB.token = q.get('gh'); GHUB.exp = +q.get('exp') || Date.now() + 8 * 3600e3; GHUB.ref = q.get('ref'); ghSave();
+  history.replaceState(null, '', location.pathname); return true;
+}
+function ghLogout() { GHUB.token = null; GHUB.exp = 0; GHUB.ref = null; GHUB.user = null; GHUB.etags.clear(); ghSave(); }
+async function ghRefresh() {
+  if (!GHUB.ref) return false;
+  try { const r = await fetch('auth/refresh', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({refresh_token: GHUB.ref})});
+    if (!r.ok) return false; const t = await r.json(); GHUB.token = t.gh; GHUB.exp = t.exp; GHUB.ref = t.ref || GHUB.ref; ghSave(); return true; } catch (e) { return false; }
+}
+async function ghFetch(path, raw) {
+  if (GHUB.exp && GHUB.exp - Date.now() < 5 * 60e3 && GHUB.ref) await ghRefresh();
+  if (!GHUB.token) throw new Error('not signed in');
+  const url = path.startsWith('http') ? path : GHUB.api + path;
+  const headers = {authorization: `Bearer ${GHUB.token}`, accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'x-github-api-version': '2022-11-28'};
+  const cached = GHUB.etags.get(url); if (cached) headers['if-none-match'] = cached.etag;
+  const r = await fetch(url, {headers, cache: 'no-store'});
+  if (r.status === 304 && cached) return cached.body;
+  if (r.status === 401) { ghLogout(); renderAuth(); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error(`github ${r.status}`);
+  const body = raw ? await r.text() : await r.json();
+  const etag = r.headers.get('etag'); if (etag) GHUB.etags.set(url, {etag, body});
+  return body;
+}
+async function ghRepos() {        // every data repo this person can read through the app
+  const inst = await ghFetch('/user/installations'); const out = [];
+  for (const i of inst.installations || []) {
+    let page = 1;
+    while (true) { const r = await ghFetch(`/user/installations/${i.id}/repositories?per_page=100&page=${page}`);
+      for (const x of r.repositories || []) out.push({repo: x.full_name, pushedAt: x.pushed_at}); if ((r.repositories || []).length < 100) break; page++; }
+  }
+  return out;
+}
+async function ghFloors() {       // one repo may hold one project (usual) or several; registry entries we cannot read are shown locked
+  const repos = await ghRepos(); const floors = [];
+  for (const r of repos) {
+    let idx; try { idx = JSON.parse(await ghFetch(`/repos/${r.repo}/contents/index.json`, true)); } catch (e) { continue; }   // not an office data repo
+    for (const p of idx.projects || []) floors.push({...p, repo: r.repo, key: `${r.repo}::${p.name}`});
+  }
+  let registry = []; try { registry = await (await fetch('floors.json', {cache: 'no-store'})).json(); } catch (e) { /* optional */ }
+  for (const reg of registry) if (!floors.some(f => f.repo === reg.repo)) floors.push({name: reg.name, repo: reg.repo, key: `${reg.repo}::${reg.name}`, locked: true, sessions: 0, active: 0, lastAt: null});
+  floors.sort((a, b) => (b.active || 0) - (a.active || 0) || String(b.lastAt || '').localeCompare(String(a.lastAt || '')));
+  return floors;
+}
+
 async function getJSON(path) {
+  if (MODE === 'github') return JSON.parse(await ghFetch(`/repos/${S.repo}/contents/${path}`, true));
   try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return await r.json(); } catch (e) { /* fallback */ }
   if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
   throw new Error('missing ' + path);
 }
 async function getEvents(path) {
+  if (MODE === 'github') return parseJSONL(await ghFetch(`/repos/${S.repo}/contents/${path}`, true));
   try { const r = await fetch(`${BASE}/${path}`, {cache: 'no-store'}); if (r.ok) return parseJSONL(await r.text()); } catch (e) { /* fallback */ }
   if (EMB && EMB.files && EMB.files[path] !== undefined) return EMB.files[path];
   throw new Error('missing ' + path);
 }
-const parseJSONL = t => t.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 
 // ================================================================ helpers
 const $ = id => document.getElementById(id);
@@ -496,7 +557,7 @@ function plant(x, y) { box(x, y, 0.5, 0.5, 10, PAL.pot, shade(PAL.pot, .8), shad
 
 // ================================================================ characters
 const S = {
-  index: null, project: null, projectInfo: null, session: null, events: [], progress: null,
+  index: null, project: null, projectInfo: null, session: null, events: [], progress: null, repo: null,
   chars: {}, spots: {}, mode: 'live', cursor: 0, clock: () => Date.now(),
   replay: {timer: null, vt: 0, speed: 60, last: 0}, pollTimer: null,
   roomBusy: {}, elev: {open: 0, target: 0, lit: 0}, floorNo: null, static: [],
@@ -698,8 +759,10 @@ function renderLog() {
 }
 function renderFloors() {
   const projects = (S.index && S.index.projects) || []; const N = projects.length;
-  $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0; return `<li class="floor ${p.name === S.project ? 'sel' : ''}" tabindex="0" data-p="${esc(p.name)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || '<li class="empty">아직 올라온 프로젝트가 없습니다</li>';
-  $('floors').querySelectorAll('.floor').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+  $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0; const key = p.key || p.name;
+    if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}</div><div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || (MODE === 'github' && !GHUB.token ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+  $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
@@ -715,30 +778,44 @@ async function boot() {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { PAL = isDark() ? PALETTE.dark : PALETTE.light; S.static = buildStatic(); renderLegend(); });
   new MutationObserver(() => { PAL = isDark() ? PALETTE.dark : PALETTE.light; S.static = buildStatic(); renderLegend(); }).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
   resize(); fitCamera(); S.static = buildStatic(); ensureChar('user');
-  try { S.index = await getJSON('index.json'); } catch (e) { S.index = {projects: []}; }
+  if (MODE === 'github') { ghLoad(); ghFromHash(); }
+  renderAuth();
+  await loadIndex();
   renderFloors();
-  const projects = S.index.projects || []; const i = Math.max(0, projects.findIndex(p => p.active));
-  if (projects.length) await selectProject(projects[i].name, projects.length - i, false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
+  const projects = (S.index.projects || []).filter(p => !p.locked); const i = Math.max(0, projects.findIndex(p => p.active));
+  if (projects.length) await selectProject(projects[i].key || projects[i].name, (S.index.projects || []).length - (S.index.projects || []).indexOf(projects[i]), false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
   setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
   let last = performance.now();
   (function loop(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; tickChars(dt); render(); syncOverlay(); requestAnimationFrame(loop); })(last);
   setInterval(() => { if (S.mode === 'live') renderPeople(); }, 1000);
 }
+async function loadIndex() {
+  if (MODE === 'github') { if (!GHUB.token) { S.index = {projects: []}; return; } try { S.index = {projects: await ghFloors()}; } catch (e) { S.index = {projects: []}; } return; }
+  try { S.index = await getJSON('index.json'); } catch (e) { S.index = {projects: []}; }
+}
+function renderAuth() {
+  const a = $('auth'); if (MODE !== 'github') { a.hidden = true; return; }
+  if (!GHUB.token) { a.innerHTML = '<a class="btn" href="auth/login">GitHub로 로그인</a>'; return; }
+  a.innerHTML = `${GHUB.user ? `<img src="${esc(GHUB.user.avatar_url)}" alt=""><span>${esc(GHUB.user.login)}</span>` : '<span>로그인됨</span>'}<button class="btn" type="button" id="b-logout">로그아웃</button>`;
+  $('b-logout').onclick = () => { ghLogout(); S.index = {projects: []}; S.events = []; S.progress = null; resetFloor(); renderAuth(); renderFloors(); renderSessions(); renderPeople(); renderLog(); $('t-project').textContent = 'Agent Office'; };
+  if (!GHUB.user) ghFetch('/user').then(u => { GHUB.user = u; renderAuth(); }).catch(() => {});
+}
 async function followLatest() {
-  try { S.index = await getJSON('index.json'); } catch (e) { return; }
+  await loadIndex();
   renderFloors();
   if (!$('follow').checked) return;
-  const projects = S.index.projects || []; const active = projects.find(p => p.active);
-  if (active && active.name !== S.project) { await selectProject(active.name, projects.length - projects.indexOf(active), true); return; }
+  const projects = (S.index.projects || []).filter(p => !p.locked); const active = projects.find(p => p.active);
+  if (active && (active.key || active.name) !== (S.floorKey || S.project)) { await selectProject(active.key || active.name, (S.index.projects || []).length - (S.index.projects || []).indexOf(active), true); return; }
   try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { return; }
   renderSessions();
   const newest = (S.projectInfo.sessions || [])[0];
   if (newest && newest.session !== S.session && (newest.status === 'active' || !(S.progress && S.progress.status === 'active'))) await selectSession(newest.session);
 }
-async function selectProject(name, no, showIndicator) {
-  S.project = name; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
+async function selectProject(key, no, showIndicator) {
+  const floor = (S.index.projects || []).find(p => (p.key || p.name) === key) || {name: key};
+  S.project = floor.name; S.repo = floor.repo || null; S.floorKey = key; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
-  try { S.projectInfo = await getJSON(`${name}/project.json`); } catch (e) { S.projectInfo = {sessions: []}; }
+  try { S.projectInfo = await getJSON(`${S.project}/project.json`); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
   const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
