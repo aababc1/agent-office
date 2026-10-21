@@ -137,6 +137,10 @@ allow-list 방식이다. 밖으로 나가는 문자열은 캡션뿐이고, 캡�
 
 `worker/`의 Cloudflare Worker 하나가 뷰어 서빙, GitHub 로그인, 읽기 API(`/api/*`), WebSocket(`/ws/<project>`), 데이터 수신(GitHub App 웹훅 `/ingest/github`, 직접 전송 `/ingest/events`)을 맡는다. 저장은 D1, 실시간 중계는 Durable Object. 세션 컨테이너는 계속 GitHub로만 push하고(비밀키 불필요), Worker가 웹훅으로 받아 D1에 넣고 뷰어에 밀어준다. 계산 서버(KBDS, 로컬 서버)나 Mac처럼 비밀키를 둘 수 있는 곳은 직접 전송으로 초 단위. 설정 절차는 `docs/worker-setup.md`. (`docs/hosting-github-login.md`의 Pages Functions 방식은 Worker 없이 쓰는 대안으로 남겨둠.)
 
+## 토론 = GitHub Discussions, 앞면 = 사무실
+
+문서는 프로젝트별 Google Drive 공유 폴더(연결 예정), 토론은 각 data repo의 **GitHub Discussions**다. Worker가 로그인한 사람의 토큰으로 GraphQL을 호출하니 보이는 범위와 작성자가 GitHub 그대로고, 알림·검색·폰 앱도 GitHub 것을 쓴다. 뷰어의 "회의" 탭에서 목록·본문·댓글·새 글이 되고, 글에 "지금 보는 세션 링크"(`#p=<project>&s=<session>`)를 붙이면 받는 사람이 링크를 눌러 그 세션으로 바로 들어온다. 웹훅(Discussion, Discussion comment)이 오면 층별 안내에 💬 새 글 표시와 탭 점이 뜬다.
+
 ## 프로젝트별 접근 권한 (GitHub 로그인)
 
 접근 권한 단위가 프로젝트라서 **data repo는 프로젝트당 하나**다(`OFFICE_DATA_REPO`가 프로젝트마다 다름). 참여자 = 그 repo의 collaborator. 뷰어는 GitHub 로그인 후 본인 토큰(GitHub App, Contents 읽기 전용)으로 collaborator인 data repo만 층으로 읽는다. 권한 없는 층은 이름만 보이고 잠긴다. 설정 절차는 `docs/hosting-github-login.md`.

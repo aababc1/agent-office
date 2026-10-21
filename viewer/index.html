@@ -166,6 +166,27 @@ select.btn{padding:4px 6px}
 .legend b{color:var(--ink);font-weight:600}
 .legend i{display:inline-block;width:10px;height:10px;border:1px solid var(--line-strong);border-radius:2px;vertical-align:-1px;margin-right:5px}
 .note{font-size:11px;color:var(--muted);padding:0 12px 10px}
+/* 회의 · 토론 (GitHub Discussions) */
+.talk{display:flex;flex-direction:column;gap:8px}
+.talk .row{display:flex;gap:8px;align-items:center}
+.dlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ditem{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.ditem:hover{background:var(--paper);border-color:var(--line)}
+.ditem img,.dmeta img{width:20px;height:20px;border-radius:50%;border:1px solid var(--line)}
+.ditem .dt{font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ditem .dx{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ditem .dc{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.dmeta{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.gh-md{font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.gh-md p{margin:0 0 .6em} .gh-md pre{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:8px;overflow:auto;font-family:var(--mono);font-size:11px}
+.gh-md code{font-family:var(--mono);font-size:11px;background:var(--paper);padding:1px 4px;border-radius:4px} .gh-md pre code{background:none;padding:0}
+.gh-md img{max-width:100%;border-radius:6px} .gh-md a{color:var(--accent)} .gh-md blockquote{margin:0 0 .6em;padding-left:10px;border-left:3px solid var(--line-strong);color:var(--muted)}
+.gh-md table{border-collapse:collapse;font-size:11px} .gh-md td,.gh-md th{border:1px solid var(--line);padding:3px 6px}
+.cmt{border-top:1px solid var(--line);padding-top:8px;margin-top:6px} .cmt.reply{margin-left:16px;border-top-style:dashed}
+.talk textarea,.talk input[type=text]{width:100%;font:inherit;font-size:12px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:7px 8px;resize:vertical;min-height:34px}
+.talk textarea{min-height:84px} .talk label.ck{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.badge-new{font-size:10px;color:var(--accent);font-weight:600;margin-left:6px}
+@media (max-width:760px){.app[data-tab="talk"] .card[data-tab="talk"]{display:block}}
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}.pill.active .lamp{animation:none}}
 </style>
 <!--OFFICE:HEAD-END-->
@@ -174,7 +195,7 @@ select.btn{padding:4px 6px}
 <!--OFFICE:BODY-START-->
 <div class="app" id="app" data-tab="progress">
   <nav class="tabs" aria-label="패널">
-    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="log">로그</button><button type="button" data-t="floors">층</button>
+    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="log">로그</button><button type="button" data-t="talk">회의</button><button type="button" data-t="floors">층</button>
   </nav>
   <aside class="guide">
     <section class="card" data-tab="floors">
@@ -235,6 +256,10 @@ select.btn{padding:4px 6px}
     <section class="card" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
+    </section>
+    <section class="card" data-tab="talk" id="talk-card" hidden>
+      <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
+      <div class="sec talk" id="talk"></div>
     </section>
     <section class="card" data-tab="log">
       <h2>활동 로그</h2>
@@ -327,6 +352,7 @@ function wkConnect() {
   WK.sock = sock;
   sock.onopen = () => { WK.backoff = 1000; };
   sock.onmessage = ev => { let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg.kind === 'discussion' && msg.project === S.project) { loadTalk(true); const n = document.querySelector('.tabs button[data-t="talk"]'); if (n) n.textContent = '회의 •'; return; }
     if (msg.kind !== 'update' || msg.project !== S.project || S.mode !== 'live') return;
     if ((msg.sessions || []).includes(S.session)) refresh(false);
     if (msg.projectChanged || !(msg.sessions || []).includes(S.session)) followLatest(); };
@@ -792,7 +818,7 @@ function renderFloors() {
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
@@ -801,6 +827,68 @@ function renderSessions() {
   $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.title || s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
   $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
+// ================================================================ 회의 · 토론 (GitHub Discussions behind /api)
+const T = {list: null, open: null, mode: 'list', categories: [], url: null, lastSeen: 0};
+function contextFooter() {
+  const sess = S.session ? ` · 세션 ${shortId(S.session)}${S.progress && S.progress.title ? ` (${S.progress.title.slice(0, 40)})` : ''}` : '';
+  const link = `${location.origin}${location.pathname}#p=${encodeURIComponent(S.project || '')}${S.session ? `&s=${encodeURIComponent(S.session)}` : ''}`;
+  return `\n\n---\n🏢 Agent Office · ${S.project || ''}${sess} · ${link}`;
+}
+async function loadTalk(silent) {
+  const card = $('talk-card');
+  if (MODE !== 'worker' || !WK.user || !S.project) { card.hidden = true; return; }
+  card.hidden = false;
+  try { T.list = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/discussions`); }
+  catch (e) { T.list = {error: e.message, discussions: []}; }
+  T.categories = (T.list && T.list.categories) || []; T.url = T.list && T.list.url;
+  if (T.mode === 'list' || !silent) renderTalk();
+}
+function renderTalk() {
+  const el = $('talk'); const L = T.list || {discussions: []};
+  $('d-n').textContent = L.discussions.length ? `${L.discussions.length}개` : '';
+  if (T.mode === 'new') {
+    el.innerHTML = `<input type="text" id="d-title" placeholder="제목"><textarea id="d-body" placeholder="내용 (마크다운)"></textarea>
+      ${T.categories.length ? `<select class="btn" id="d-cat">${T.categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
+      <label class="ck"><input type="checkbox" id="d-ctx" checked> 지금 보는 세션 링크 첨부</label>
+      <div class="row"><button class="btn on" type="button" id="d-send">올리기</button><button class="btn" type="button" id="d-cancel">취소</button><span class="note" id="d-msg"></span></div>`;
+    $('d-cancel').onclick = () => { T.mode = 'list'; renderTalk(); };
+    $('d-send').onclick = async () => { const title = $('d-title').value.trim(), body = $('d-body').value.trim(); if (!title || !body) { $('d-msg').textContent = '제목과 내용이 필요합니다'; return; }
+      $('d-send').disabled = true; $('d-msg').textContent = '올리는 중…';
+      try { const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/discussions`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin',
+          body: JSON.stringify({title, body: body + ($('d-ctx').checked ? contextFooter() : ''), categoryId: $('d-cat') ? $('d-cat').value : undefined})});
+        const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+        T.mode = 'list'; await loadTalk(false); openTalk(j.number); } catch (e) { $('d-msg').textContent = `실패: ${e.message}`; $('d-send').disabled = false; } };
+    return;
+  }
+  if (T.mode === 'one' && T.open) {
+    const d = T.open; const who = a => a ? `<img src="${esc(a.avatar)}" alt=""><b>${esc(a.login)}</b>` : '';
+    const c = (x, cls) => `<div class="cmt ${cls}"><div class="dmeta">${who(x.author)}<span>${fmtRel(x.createdAt)}</span></div><div class="gh-md">${x.html || ''}</div></div>`;
+    el.innerHTML = `<div class="row"><button class="btn" type="button" id="d-back">← 목록</button><a class="btn" href="${esc(d.url)}" target="_blank" rel="noopener">GitHub에서 열기</a></div>
+      <div><div style="font-weight:600">${esc(d.title)}</div><div class="dmeta">${who(d.author)}<span>${fmtRel(d.createdAt)}</span>${d.category ? `<span>· ${esc(d.category)}</span>` : ''}</div></div>
+      <div class="gh-md">${d.html || ''}</div>
+      ${(d.comments || []).map(x => c(x, '') + (x.replies || []).map(r => c(r, 'reply')).join('')).join('')}
+      <textarea id="c-body" placeholder="댓글 (마크다운)"></textarea>
+      <label class="ck"><input type="checkbox" id="c-ctx"> 지금 보는 세션 링크 첨부</label>
+      <div class="row"><button class="btn on" type="button" id="c-send">댓글 달기</button><span class="note" id="c-msg"></span></div>`;
+    $('d-back').onclick = () => { T.mode = 'list'; T.open = null; renderTalk(); };
+    $('c-send').onclick = async () => { const body = $('c-body').value.trim(); if (!body) return; $('c-send').disabled = true; $('c-msg').textContent = '…';
+      try { const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/discussions/${d.number}/comments`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin',
+          body: JSON.stringify({body: body + ($('c-ctx').checked ? contextFooter() : '')})});
+        const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); await openTalk(d.number); } catch (e) { $('c-msg').textContent = `실패: ${e.message}`; $('c-send').disabled = false; } };
+    return;
+  }
+  if (L.error) { el.innerHTML = `<div class="note">토론을 불러오지 못했습니다: ${esc(L.error)}</div>`; return; }
+  if (L.enabled === false) { el.innerHTML = `<div class="note">이 프로젝트의 data repo에 Discussions가 꺼져 있습니다. GitHub repo → Settings → Features → Discussions를 켜 주세요.</div>`; return; }
+  el.innerHTML = `<ul class="dlist">${L.discussions.map(d => `<li class="ditem" data-n="${d.number}" tabindex="0">${d.author ? `<img src="${esc(d.author.avatar)}" alt="">` : '<span></span>'}<div style="min-width:0"><div class="dt">${esc(d.title)}</div><div class="dx">${esc(d.author ? d.author.login : '')} · ${fmtRel(d.updatedAt)} · ${esc(d.excerpt)}</div></div><span class="dc">💬 ${d.comments}</span></li>`).join('') || '<li class="note">아직 글이 없습니다. "새 글"로 시작하세요.</li>'}</ul>
+    ${T.url ? `<a class="note" href="${esc(T.url)}" target="_blank" rel="noopener">GitHub Discussions에서 전체 보기 ↗</a>` : ''}`;
+  el.querySelectorAll('.ditem').forEach(li => { const go = () => openTalk(+li.dataset.n); li.onclick = go; li.onkeydown = ev => { if (ev.key === 'Enter') go(); }; });
+}
+async function openTalk(number) {
+  try { T.open = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/discussions/${number}`); T.mode = 'one'; } catch (e) { T.open = null; T.mode = 'list'; }
+  renderTalk();
+}
+$('d-new').onclick = () => { T.mode = 'new'; renderTalk(); };
+
 function renderLegend() { $('legend').innerHTML = LEGEND.map(([k, t]) => `<span><i style="background:${floorFill(ROOMS[k].floor)}"></i><b>${ROOMS[k].ko}</b> ${t}</span>`).join(''); }
 
 // ================================================================ loading & modes
@@ -814,7 +902,9 @@ async function boot() {
   renderAuth();
   await loadIndex();
   renderFloors();
-  const projects = (S.index.projects || []).filter(p => !p.locked); const i = Math.max(0, projects.findIndex(p => p.active));
+  const want = new URLSearchParams(location.hash.slice(1));                     // deep links from discussion posts: #p=<project>&s=<session>
+  const projects = (S.index.projects || []).filter(p => !p.locked); const i = Math.max(0, want.get('p') ? projects.findIndex(p => p.name === want.get('p')) : projects.findIndex(p => p.active));
+  S.wantSession = want.get('s') || null;
   if (projects.length) await selectProject(projects[i].key || projects[i].name, (S.index.projects || []).length - (S.index.projects || []).indexOf(projects[i]), false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
   setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
   let last = performance.now();
@@ -858,8 +948,9 @@ async function selectProject(key, no, showIndicator) {
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
-  if (MODE === 'worker') wkConnect();
-  const s = S.projectInfo.sessions[0]; if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
+  if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); }
+  const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
+  if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
 async function selectSession(ses) {
   S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
@@ -927,7 +1018,7 @@ $('b-replay').onclick = () => startReplay();
 $('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
 $('s-range').oninput = ev => { if (S.mode === 'replay') seekReplay(+ev.target.value); };
 
-document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { $('app').dataset.tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { $('app').dataset.tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); if (b.dataset.t === 'talk') { b.textContent = '회의'; loadTalk(false); } });
 boot();
 })();
 </script>

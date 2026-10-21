@@ -1,6 +1,7 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, unauthorized } from "./auth.js";
 import { json } from "./util.js";
+import * as disc from "./discussions.js";
 
 const withCookie = (res, setCookie) => { if (!setCookie) return res; const r = new Response(res.body, res); r.headers.append("set-cookie", setCookie); return r; };
 
@@ -13,7 +14,7 @@ export async function me(request, env) {
 export async function floors(request, env) {
   const { session, setCookie } = await getSession(request, env);
   if (!session) return withCookie(unauthorized(), setCookie);
-  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json FROM projects ORDER BY last_at DESC").all()).results || [];
+  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json, discussion_at, discussion_last FROM projects ORDER BY last_at DESC").all()).results || [];
   const out = [];
   for (const r of rows) {
     const ok = await canRead(env, session, r.repo);
@@ -21,7 +22,8 @@ export async function floors(request, env) {
     const s = r.summary_json ? JSON.parse(r.summary_json) : {};
     out.push({ name: r.name, repo: r.repo, description: r.description, lastAt: r.last_at, emitterAt: r.emitter_at,
                sessions: (s.sessions || {}).total || 0, active: (s.sessions || {}).active || 0,
-               latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: s.pipeline || null });
+               latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: s.pipeline || null,
+               discussionAt: r.discussion_at || null, discussionLast: r.discussion_last ? JSON.parse(r.discussion_last) : null });
   }
   return withCookie(json({ floors: out }), setCookie);
 }
@@ -60,4 +62,15 @@ export async function ws(request, env, name) {
   if (request.headers.get("upgrade") !== "websocket") return json({ error: "websocket upgrade expected" }, 426);
   const stub = env.FLOOR.get(env.FLOOR.idFromName(name));
   return stub.fetch(request);
+}
+
+// ---- discussions (GitHub Discussions on the data repo, with the person's own token)
+export async function discussions(request, env, name, number) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  const repo = g.project.repo; if (!repo) return withCookie(json({ error: "project has no repo" }, 409), g.setCookie);
+  const body = request.method === "POST" ? await request.json().catch(() => null) : null;
+  try {
+    if (number == null) return withCookie(request.method === "POST" ? await disc.create(env, g.session, repo, body) : await disc.list(env, g.session, repo), g.setCookie);
+    return withCookie(request.method === "POST" ? await disc.comment(env, g.session, repo, number, body) : await disc.one(env, g.session, repo, number), g.setCookie);
+  } catch (e) { return withCookie(json({ error: e.message }, 502), g.setCookie); }
 }

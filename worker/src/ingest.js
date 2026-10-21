@@ -16,6 +16,16 @@ export async function webhook(request, env, ctx) {
   if (!env.GH_WEBHOOK_SECRET || !timingSafeEqual(sig, expected)) return text("bad signature", 401);
   const event = request.headers.get("x-github-event");
   if (event === "ping") return json({ ok: true, pong: true });
+  if (event === "discussion" || event === "discussion_comment") {
+    const p = JSON.parse(body); const repo = p.repository && p.repository.full_name;
+    const project = repo ? await projectOfRepo(env, repo) : null;
+    if (!project) return json({ ok: true, ignored: "unknown repo" });
+    const d = p.discussion || {}; const by = (p.sender || {}).login || null;
+    const last = { number: d.number, title: d.title, by, action: `${event}:${p.action}`, at: nowIso() };
+    await env.DB.prepare("UPDATE projects SET discussion_at=?, discussion_last=? WHERE name=?").bind(last.at, JSON.stringify(last), project).run();
+    ctx.waitUntil(broadcast(env, project, { kind: "discussion", project, ...last }));
+    return json({ ok: true });
+  }
   if (event !== "push") return json({ ok: true, ignored: event });
   const p = JSON.parse(body);
   const repo = p.repository && p.repository.full_name;

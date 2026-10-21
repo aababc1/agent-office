@@ -27,20 +27,22 @@ GitHub → Settings → Developer settings → GitHub Apps → New GitHub App
 | Expire user authorization tokens | ✅ |
 | Request user authorization (OAuth) during installation | ✅ |
 | **Webhook** → Active | ✅ URL `https://agent-office.<계정>.workers.dev/ingest/github`, Secret = 임의 문자열(=`GH_WEBHOOK_SECRET`) |
-| Repository permissions | **Contents: Read-only**, Metadata: Read-only(자동) |
-| Subscribe to events | **Push** |
+| Repository permissions | **Contents: Read-only**, **Discussions: Read and write**, Metadata: Read-only(자동) |
+| Subscribe to events | **Push**, **Discussion**, **Discussion comment** |
 | Where can this app be installed? | Only on this account |
 
 만든 뒤 적어둘 것: **App ID**, **Client ID**, **Client secret**(Generate), **Private key**(Generate → `.pem` 다운로드). pem은 PKCS#1 형식(`BEGIN RSA PRIVATE KEY`)이어도 Worker가 그대로 받는다.
 
 Install App → 계정 선택 → **Only select repositories** → data repo들. App 웹훅은 설치된 모든 repo의 push를 한 번에 보내므로 repo마다 웹훅을 따로 걸 필요가 없다. 새 data repo가 생기면 설치 목록에 추가만 하면 된다.
 
+각 data repo에서 **Settings → Features → Discussions**를 켠다. 토론은 여기(GitHub Discussions)에 쌓이고 사무실의 "회의" 탭이 앞면이 된다: 참여자 범위는 collaborator 그대로, 알림·검색·폰 앱은 GitHub 것, 글에는 "지금 보는 세션 링크"가 자동으로 붙는다.
+
 ## 2. D1 데이터베이스
 
-Cloudflare 대시보드 → Storage & Databases → D1 → Create → 이름 `agent-office`. 생성된 **Database ID**를 `worker/wrangler.toml`의 `database_id`에 넣고 커밋. 스키마는 `worker/migrations/0001_init.sql`:
+Cloudflare 대시보드 → Storage & Databases → D1 → Create → 이름 `agent-office`. 생성된 **Database ID**를 `worker/wrangler.toml`의 `database_id`에 넣고 커밋. 스키마는 `worker/migrations/*.sql`(순서대로):
 
 - 로컬에 wrangler가 있으면 `cd worker && npx wrangler d1 migrations apply agent-office --remote`
-- 없으면 D1 콘솔(대시보드의 Console 탭)에 `0001_init.sql` 내용을 붙여 넣고 실행
+- 없으면 D1 콘솔(대시보드의 Console 탭)에 `0001_init.sql`, `0002_discussions.sql` 내용을 차례로 붙여 넣고 실행
 
 ## 3. Worker 배포 (GitHub 연동, 토큰 없이)
 
