@@ -4,3 +4,4 @@ __pycache__/
 *.tmp
 .office-*
 /data/
+examples/*/plan.json
