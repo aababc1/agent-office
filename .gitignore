@@ -5,3 +5,6 @@ __pycache__/
 .office-*
 /data/
 examples/*/plan.json
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars

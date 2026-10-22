@@ -171,6 +171,7 @@ select.btn{padding:4px 6px}
 .note{font-size:11px;color:var(--muted);padding:0 12px 10px}
 /* 회의 · 토론 (GitHub Discussions) */
 .talk{display:flex;flex-direction:column;gap:8px}
+.talk .dlist{max-height:320px}
 .talk .row{display:flex;gap:8px;align-items:center}
 .dlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .ditem{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
@@ -210,6 +211,21 @@ select.btn{padding:4px 6px}
 .unplanned{font-size:11px;color:var(--muted)} .unplanned code{font-family:var(--mono);background:var(--paper);padding:1px 4px;border-radius:4px}
 @media (max-width:760px){.app[data-tab="pipe"] .card[data-tab="pipe"]{display:block}}
 @media (max-width:760px){.app[data-tab="talk"] .card[data-tab="talk"]{display:block}}
+@media (max-width:760px){.app[data-tab="docs"] .card[data-tab="docs"]{display:block}}
+/* ---- 자료실 ---- */
+.docs{display:flex;flex-direction:column;gap:8px}
+.docs .row{display:flex;gap:6px;flex-wrap:wrap}
+.docs .row .btn{font-size:11px;padding:5px 9px;text-decoration:none;display:inline-flex;gap:5px;align-items:center}
+.docs .row .btn.drive{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.dlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:360px;overflow:auto;overscroll-behavior:contain}
+.xitem{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;text-decoration:none;color:inherit;border:1px solid transparent}
+.xitem:hover{background:var(--paper);border-color:var(--line)}
+.xitem .xi{font-size:15px;text-align:center}
+.xitem .xt{font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xitem .xs{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xitem .xw{font-size:10px;color:var(--muted);white-space:nowrap;font-family:var(--mono)}
+.xitem.new .xs::before{content:'새 자료 · ';color:var(--accent);font-weight:600}
+.docs .group{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:4px 8px 0}
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}.pill.active .lamp{animation:none}}
 </style>
 <!--OFFICE:HEAD-END-->
@@ -218,7 +234,7 @@ select.btn{padding:4px 6px}
 <!--OFFICE:BODY-START-->
 <div class="app" id="app" data-tab="progress">
   <nav class="tabs" aria-label="패널">
-    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="pipe">공정</button><button type="button" data-t="log">로그</button><button type="button" data-t="talk">회의</button><button type="button" data-t="floors">층</button>
+    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="pipe">공정</button><button type="button" data-t="talk">회의</button><button type="button" data-t="docs">자료</button><button type="button" data-t="log">로그</button><button type="button" data-t="floors">층</button>
   </nav>
   <aside class="guide">
     <section class="card" data-tab="floors">
@@ -229,6 +245,14 @@ select.btn{padding:4px 6px}
     <section class="card" data-tab="floors">
       <h2>이 층의 세션 <span class="n" id="ses-n"></span></h2>
       <ul class="sessions" id="sessions"></ul>
+    </section>
+    <section class="card" data-tab="talk" id="talk-card" hidden>
+      <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
+      <div class="sec talk" id="talk"></div>
+    </section>
+    <section class="card" data-tab="docs" id="docs-card" hidden>
+      <h2>자료실 · 문서 <span class="n" id="x-n"></span></h2>
+      <div class="sec docs" id="docs"></div>
     </section>
   </aside>
 
@@ -283,10 +307,6 @@ select.btn{padding:4px 6px}
     <section class="card" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
-    </section>
-    <section class="card" data-tab="talk" id="talk-card" hidden>
-      <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
-      <div class="sec talk" id="talk"></div>
     </section>
     <section class="card" data-tab="log">
       <h2>활동 로그</h2>
@@ -380,6 +400,7 @@ function wkConnect() {
   sock.onopen = () => { WK.backoff = 1000; };
   sock.onmessage = ev => { let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg.kind === 'discussion' && msg.project === S.project) { loadTalk(true); const n = document.querySelector('.tabs button[data-t="talk"]'); if (n) n.textContent = '회의 •'; return; }
+    if (msg.kind === 'docs' && msg.project === S.project) { loadDocs(); const n = document.querySelector('.tabs button[data-t="docs"]'); if (n) n.textContent = '자료 •'; return; }
     if (msg.kind !== 'update' || msg.project !== S.project || S.mode !== 'live') return;
     if ((msg.sessions || []).includes(S.session)) refresh(false);
     if (msg.projectChanged) loadPipeline();
@@ -872,7 +893,7 @@ function renderFloors() {
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}${p.pipeline && p.pipeline.total ? `<div class="sb">공정 ${p.pipeline.done}/${p.pipeline.total} · ${Math.round((p.pipeline.ratio || 0) * 100)}%${p.pipeline.running ? ` · ▶${p.pipeline.running}` : ''}${p.pipeline.failed ? ` · <span style="color:var(--bad)">✕${p.pipeline.failed}</span>` : ''}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}${p.docsAt && Date.now() - Date.parse(p.docsAt) < 86400e3 ? '<span class="badge-new">📎 새 자료</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}${p.pipeline && p.pipeline.total ? `<div class="sb">공정 ${p.pipeline.done}/${p.pipeline.total} · ${Math.round((p.pipeline.ratio || 0) * 100)}%${p.pipeline.running ? ` · ▶${p.pipeline.running}` : ''}${p.pipeline.failed ? ` · <span style="color:var(--bad)">✕${p.pipeline.failed}</span>` : ''}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
@@ -944,6 +965,31 @@ function renderPipeline() {
   if ((plan.milestones || []).length) html += `<div class="cluster">${plan.milestones.map(m => `<div class="row"><span>🏁 ${esc(m.name)}</span><b>${esc(m.date)}</b></div>`).join('')}</div>`;
   el.innerHTML = html;
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
+}
+
+// ================================================================ 자료실 · 문서 (docs/** of the data repo + a Drive folder / pinned links)
+const X = {data: null, seenAt: 0};
+const fileIcon = n => { const e = (n.split('.').pop() || '').toLowerCase();
+  return ({pdf: '📕', doc: '📝', docx: '📝', md: '📝', txt: '📝', xls: '📊', xlsx: '📊', csv: '📊', tsv: '📊', ppt: '📽', pptx: '📽', png: '🖼', jpg: '🖼', jpeg: '🖼', svg: '🖼', zip: '🗜', gz: '🗜', tar: '🗜', fa: '🧬', fasta: '🧬', fastq: '🧬', ipynb: '📓', py: '⚙️', sh: '⚙️', r: '⚙️'})[e] || '📄'; };
+const fmtSize = b => b == null ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : b < 1073741824 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1073741824).toFixed(2)} GB`;
+async function loadDocs() {
+  const card = $('docs-card'); X.data = null;
+  if (MODE !== 'worker' || !WK.user || !S.project) { card.hidden = true; return; }
+  card.hidden = false;
+  try { X.data = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/docs`); } catch (e) { X.data = {error: e.message}; }
+  renderDocs();
+}
+function renderDocs() {
+  const el = $('docs'); const d = X.data;
+  if (!d) { el.innerHTML = '<div class="note">불러오는 중…</div>'; return; }
+  if (d.error) { el.innerHTML = `<div class="note">자료실을 불러오지 못했습니다: ${esc(d.error)}</div>`; return; }
+  const files = d.files || []; $('x-n').textContent = files.length ? `${files.length}개` : '';
+  const dayAgo = Date.now() - 86400e3;
+  let html = `<div class="row">${d.drive ? `<a class="btn drive" href="${esc(d.drive)}" target="_blank" rel="noopener">📁 Drive 폴더</a>` : ''}${d.uploadUrl ? `<a class="btn" href="${esc(d.uploadUrl)}" target="_blank" rel="noopener">⬆ 올리기</a>` : ''}${d.folderUrl ? `<a class="btn" href="${esc(d.folderUrl)}" target="_blank" rel="noopener">GitHub docs/</a>` : ''}</div>`;
+  if ((d.links || []).length) html += `<div class="group">링크</div><ul class="dlist">${d.links.map(l => `<li><a class="xitem" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="xi">🔗</span><span class="xt">${esc(l.name || l.url)}</span><span class="xw">${esc(l.note || '')}</span></a></li>`).join('')}</ul>`;
+  if (files.length) html += `<div class="group">파일 · 최근 순</div><ul class="dlist">${files.map(f => `<li><a class="xitem ${f.updatedAt && Date.parse(f.updatedAt) > dayAgo ? 'new' : ''}" href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${fileIcon(f.name)}</span><span style="min-width:0"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.updatedAt ? fmtRel(f.updatedAt) : ''}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
+  else html += `<div class="note">아직 자료가 없습니다. ${d.drive ? 'Drive 폴더에 올리거나, ' : ''}data repo의 <code>docs/</code> 폴더에 올리면 여기에 보입니다${d.drive ? '' : ' (Drive 폴더는 repo의 <code>office.json</code>에 적으면 버튼이 생깁니다)'}.</div>`;
+  el.innerHTML = html;
 }
 
 // ================================================================ 회의 · 토론 (GitHub Discussions behind /api)
@@ -1067,7 +1113,7 @@ async function selectProject(key, no, showIndicator) {
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
-  if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); }
+  if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); loadDocs(); } else { $('talk-card').hidden = true; $('docs-card').hidden = true; }
   loadPipeline();
   const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
   if (s) await selectSession(s.session); else { S.session = null; S.events = []; S.progress = null; $('t-project').textContent = S.project; $('t-session').textContent = ''; clearInterval(S.pollTimer); resetFloor(); renderProgress(); renderPeople(); renderLog(); }
@@ -1138,7 +1184,7 @@ $('b-replay').onclick = () => startReplay();
 $('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
 $('s-range').oninput = ev => { if (S.mode === 'replay') seekReplay(+ev.target.value); };
 
-document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { $('app').dataset.tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); if (b.dataset.t === 'talk') { b.textContent = '회의'; loadTalk(false); } });
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { $('app').dataset.tab = b.dataset.t; document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b)); if (b.dataset.t === 'talk') { b.textContent = '회의'; loadTalk(false); } if (b.dataset.t === 'docs') { b.textContent = '자료'; loadDocs(); } });
 boot();
 })();
 </script>

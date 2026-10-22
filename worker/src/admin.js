@@ -1,7 +1,7 @@
 // Admin-only helpers: see where the GitHub App path breaks, and re-read a data repo from scratch.
 import { getSession } from "./auth.js";
-import { appJwt, installationToken, rawFile, repoTree } from "./github.js";
-import { processRepoPush } from "./ingest.js";
+import { appJwt, installationToken, rawFile, repoBlobs } from "./github.js";
+import { applyDocs, processRepoPush } from "./ingest.js";
 import { json } from "./util.js";
 
 async function admin(request, env) {
@@ -34,10 +34,18 @@ export async function resync(request, env) {
   const g = await admin(request, env); if (g.deny) return g.deny;
   const repo = new URL(request.url).searchParams.get("repo") || `${env.GH_OWNER}/agent-office-data`;
   try {
-    const paths = await repoTree(env, repo);
-    const wanted = paths.filter(p => p === "summary.json" || p === "project.json" || p === "plan.json" || /^pipeline\/[^/]+\/progress\.json$/.test(p) || /^sessions\/[^/]+\.progress\.json$/.test(p) || /^sessions\/[^/]+\/events\.\d{3}\.jsonl$/.test(p));
+    const blobs = await repoBlobs(env, repo); const paths = blobs.map(b => b.path);
+    const wanted = paths.filter(p => p === "summary.json" || p === "project.json" || p === "plan.json" || p === "office.json" || /^pipeline\/[^/]+\/progress\.json$/.test(p) || /^sessions\/[^/]+\.progress\.json$/.test(p) || /^sessions\/[^/]+\/events\.\d{3}\.jsonl$/.test(p));
     await processRepoPush(env, repo, "HEAD", wanted);
+    const docsNow = blobs.filter(b => /^docs\/.+[^/]$/.test(b.path));
+    const project = (await env.DB.prepare("SELECT name FROM projects WHERE repo=?").bind(repo).first() || {}).name;
+    if (project) {   // files gone from the tree leave the list; present ones keep their push-time author/date, gain their size
+      const known = ((await env.DB.prepare("SELECT path FROM docs WHERE project=?").bind(project).all()).results || []).map(r => r.path);
+      const have = new Set(docsNow.map(b => b.path));
+      await applyDocs(env, repo, [...known.filter(p => !have.has(p)).map(p => ({ path: p, removed: true })), ...docsNow.filter(b => !known.includes(b.path)).map(b => ({ path: b.path, at: null }))]);
+      for (const b of docsNow) await env.DB.prepare("UPDATE docs SET size=? WHERE project=? AND path=?").bind(b.size, project, b.path).run();
+    }
     const rows = (await env.DB.prepare("SELECT name, repo, last_at FROM projects").all()).results || [];
-    return json({ ok: true, repo, files: wanted.length, projects: rows, sessions: (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, events: (await env.DB.prepare("SELECT COUNT(*) AS n FROM events").first()).n });
+    return json({ ok: true, repo, files: wanted.length, docs: docsNow.length, projects: rows, sessions: (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, events: (await env.DB.prepare("SELECT COUNT(*) AS n FROM events").first()).n });
   } catch (e) { return json({ ok: false, repo, error: e.message, hint: "GET /api/admin/diag shows which step fails" }, 502); }
 }

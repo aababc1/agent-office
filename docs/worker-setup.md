@@ -84,6 +84,22 @@ curl -X POST https://agent-office.<계정>.workers.dev/ingest/events \
 
 필드는 전부 선택이다. 받은 즉시 D1에 쓰고 그 층을 보고 있는 모든 뷰어에 WebSocket으로 알린다. 계산 서버의 리더/office-emit은 이 경로로 초 단위 갱신을 보낸다.
 
+## 6. 회의 · 자료실 (층마다)
+
+왼쪽 열(폰에서는 **회의**·**자료** 탭)에 두 카드가 항상 보인다.
+
+- **회의** = data repo의 GitHub Discussions. 1단계에서 Discussions만 켜면 된다. 글·댓글은 GitHub에 남고, 사무실에서 쓰면 "지금 보는 세션 링크"가 자동으로 붙는다.
+- **자료실** = data repo의 `docs/` 폴더 + Google Drive 폴더 버튼 + 고정 링크.
+  - `docs/`에 파일을 push하거나 GitHub 웹의 **⬆ 올리기**(Upload files)로 올리면 웹훅이 받아 목록에 뜬다(올린 사람·시각·크기, 24시간 안이면 📎 새 자료). 파일 자체는 GitHub에 있고 참여자만 연다.
+  - Drive 폴더·링크는 data repo 루트의 `office.json`에 적는다(없어도 된다):
+    ```json
+    {"docs": {"drive": "https://drive.google.com/drive/folders/<id>", "links": [{"name": "runbook v3", "url": "https://…", "note": "2026-10"}]}}
+    ```
+    계산 서버 프로젝트는 `plan.yaml`의 `docs:` 블록이 같은 역할을 한다(프로브가 plan과 함께 보낸다). Drive 폴더의 공유 범위는 Drive에서 따로 관리한다 — 버튼은 링크를 열 뿐이다.
+  - 이미 `docs/`에 파일이 있던 repo는 `/api/admin/resync?repo=<owner/repo>` 한 번으로 목록을 채운다.
+
+스키마는 Worker가 첫 요청에서 스스로 맞춘다(`src/schema.js`: 없는 테이블·컬럼만 추가). D1 콘솔에서 ALTER를 칠 필요가 없다.
+
 ## 로컬에서 돌려보기
 
 ```bash

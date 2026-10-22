@@ -81,3 +81,10 @@ export async function repoTree(env, repo, ref = "HEAD") {
   const t = await r.json();
   return (t.tree || []).filter(x => x.type === "blob").map(x => x.path);
 }
+export async function repoBlobs(env, repo, ref = "HEAD") {          // same, with sizes (for the 자료실 resync)
+  const token = await installationToken(env, repo.split("/")[0]);
+  const r = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": UA, "x-github-api-version": "2022-11-28" } });
+  if (!r.ok) throw new Error(`tree ${repo}: ${r.status}`);
+  const t = await r.json();
+  return (t.tree || []).filter(x => x.type === "blob").map(x => ({ path: x.path, size: x.size }));
+}

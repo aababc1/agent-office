@@ -122,6 +122,12 @@ stages:
     done: {kind: file, path: "$MAG_DIR/mag_quality.tsv"}
     runner: {kind: slurm, job: metacrc-magqc, cpus: 64, mem: 400G, time_h: 72}
 
+# 자료실 (viewer's 문서 card). Files pushed to docs/ in the data repo are listed automatically;
+# a Google Drive folder shared with the same people gets a button; links are pinned at the top.
+docs:
+  drive: null                            # e.g. https://drive.google.com/drive/folders/<id>
+  links: []                              # e.g. {name: "metaCRC runbook", url: "https://…", note: "v3"}
+
 milestones: []                           # TODO: {date: 2026-MM-DD, name: ...}
 
 alerts: [job_failed, stage_done, heartbeat_lost_2h]
