@@ -106,7 +106,8 @@ export async function docs(request, env, name) {
   const files = ((await env.DB.prepare("SELECT path, size, by, sha, updated_at FROM docs WHERE project=? ORDER BY updated_at DESC, path").bind(name).all()).results || [])
     .map(d => ({ path: d.path, name: d.path.replace(/^docs\//, ""), size: d.size, by: d.by, updatedAt: d.updated_at,
                  url: repo ? `https://github.com/${repo}/blob/${encodeURIComponent(branch)}/${d.path.split("/").map(encodeURIComponent).join("/")}` : null }));
-  return withCookie(json({ drive: cfg.drive || null, driveEnabled: driveEnabled(env), driveFiles: drive ? drive.files : [], driveAt: drive ? drive.at : null, driveError: drive ? drive.error : null,
+  const driveUrl = cfg.drive ? String(cfg.drive).replace(/\/drive\/u\/\d+\//, "/drive/") : null;   // "/u/2/" is the author's account slot; others open it with their own
+  return withCookie(json({ drive: driveUrl, driveEnabled: driveEnabled(env), driveFiles: drive ? drive.files : [], driveAt: drive ? drive.at : null, driveError: drive ? drive.error : null,
                            links: Array.isArray(cfg.links) ? cfg.links : [], branch, repo,
                            uploadUrl: repo ? `https://github.com/${repo}/upload/${encodeURIComponent(branch)}/docs` : null,
                            folderUrl: repo ? `https://github.com/${repo}/tree/${encodeURIComponent(branch)}/docs` : null, files }), g.setCookie);
