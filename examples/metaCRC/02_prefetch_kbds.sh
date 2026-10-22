@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
-# metaCRC — prefetch + vdb-validate on the lab Linux server, with live progress in the office.
-# Source: metaCRC_runbook.sh §02 (same flags, same markers, same FAILED format). Differences:
-#   * .sra files are KEPT (they go to K-BDS; 03_dump there deletes them after a successful dump)
-#   * an office-probe loop on this server posts progress every 2 minutes (prefetch/upload stages only)
-#   * a disk-space guard: stop launching new runs when free space drops below $MIN_FREE_GB
+# metaCRC — prefetch + vdb-validate on K-BDS (tmux on the login node), with live progress in the office.
+# Source: metaCRC_runbook.sh §02 — same flags, same markers, same FAILED format, .sra kept until 03_dump
+# deletes it. Added: a disk-space guard, a per-run throughput log, and an office-probe loop (every 2 min).
 #
 # Usage:
-#   ./02_prefetch_local.sh env        write 00_env_local.sh (edit paths once)
-#   ./02_prefetch_local.sh conda      create the metacrc-dl env (sra-tools>=3.1)
-#   ./02_prefetch_local.sh run        download+validate everything in $RUNLIST (resume-safe; run in tmux)
-#   ./02_prefetch_local.sh retry      re-run only the runs listed in $LOG_DIR/prefetch.FAILED
-#   ./02_prefetch_local.sh status     counts, failures, disk, throughput
-#   ./02_prefetch_local.sh office     start the office-probe loop in tmux (needs OFFICE_TOKEN in 00_env_local.sh)
+#   ./02_prefetch_kbds.sh env        write 00_env_local.sh (edit paths once; same variables as the runbook's 00_env.sh)
+#   ./02_prefetch_kbds.sh conda      create the metacrc-dl env (sra-tools>=3.1)  — or use your existing sra-tools env
+#   ./02_prefetch_kbds.sh run        download+validate everything in $RUNLIST (resume-safe; run in tmux)
+#   ./02_prefetch_kbds.sh retry      re-run only the runs listed in $LOG_DIR/prefetch.FAILED
+#   ./02_prefetch_kbds.sh status     counts, failures, disk, throughput
+#   ./02_prefetch_kbds.sh office     start the office-probe loop in tmux (needs OFFICE_TOKEN in 00_env_local.sh)
 set -uo pipefail
 cd "$(dirname "$0")"
 
 case "${1:-}" in
 env)
 cat > 00_env_local.sh <<'ENV'
-# ── lab server paths (edit) ────────────────────────────────────
-export PROJ=/data/metaCRC                      # same layout as K-BDS: manifest/ sra/ logs/
+# ── K-BDS paths (edit; same as the runbook's 00_env.sh) ────────
+export PROJ=/scratch/$USER/metaCRC
 export MANIFEST=$PROJ/manifest/run_manifest.tsv
 export RUNLIST=$PROJ/manifest/runs_all.txt    # decide first: keep SINGLE runs (2,061) or not
-export SRA_DIR=$PROJ/sra                       # prefetch output (.sra kept until uploaded)
+export SRA_DIR=$PROJ/sra                       # prefetch output (.sra; 03_dump deletes it after a good dump)
 export LOG_DIR=$PROJ/logs
 export PARALLEL=6                              # >6 and NCBI throttles (runbook)
 export MIN_FREE_GB=200                         # stop launching new downloads below this
@@ -30,7 +28,7 @@ export MIN_FREE_GB=200                         # stop launching new downloads be
 # ── office (progress → phone) ──────────────────────────────────
 export OFFICE_TO=https://agent-office.hyeongwon-tg.workers.dev
 export OFFICE_TOKEN=                           # Cloudflare PROJECT_TOKENS["metaCRC"]
-export OFFICE_SITE=local
+export OFFICE_SITE=kbds
 export OFFICE_PLAN=$PWD/plan.yaml
 
 mkdir -p "$SRA_DIR" "$LOG_DIR" "$PROJ/manifest"
@@ -43,7 +41,7 @@ conda run -n metacrc-dl prefetch --version && conda run -n metacrc-dl vdb-valida
 
 run|retry)
 source ./00_env_local.sh
-eval "$(conda shell.bash hook)"; conda activate metacrc-dl
+eval "$(conda shell.bash hook)"; conda activate "${DL_ENV:-metacrc-dl}"      # DL_ENV=sra-tools to reuse the existing env
 # cache on the big disk, not $HOME (runbook)
 vdb-config -s /repository/user/main/public/root="$SRA_DIR"
 vdb-config -s /LIBS/GUID="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)" 2>/dev/null || true
@@ -80,8 +78,7 @@ xargs -a "$LIST" -n1 -P "$PARALLEL" -I{} bash -c 'fetch_one {}'
 status)
 source ./00_env_local.sh
 T=$(wc -l < "$RUNLIST"); D=$(find "$SRA_DIR" -name .validated 2>/dev/null | wc -l); F=$(sort -u "$LOG_DIR/prefetch.FAILED" 2>/dev/null | wc -l)
-U=$(find "$SRA_DIR" -name .uploaded 2>/dev/null | wc -l)
-printf 'validated %6d / %d   failed %d   uploaded %d\n' "$D" "$T" "$F" "$U"
+printf 'validated %6d / %d   failed %d\n' "$D" "$T" "$F"
 if [ -s "$LOG_DIR/prefetch_done.tsv" ]; then
   awk -F'\t' -v now="$(date +%s)" 'BEGIN{n=0;b=0} { cmd="date -d \""$2"\" +%s"; cmd | getline t; close(cmd); if (now-t<=3*3600){n++; b+=$4} } END{printf "last 3h: %d runs, %.1f GB → %.1f runs/h, %.2f TB/day\n", n, b/1e9, n/3, b/1e9/3*24/1000}' "$LOG_DIR/prefetch_done.tsv"
 fi

@@ -11,13 +11,12 @@ dates:
   due: null                             # TODO
 where: kbds                             # default site for stages that do not say `where:`
 
-# Two machines, one plan. Each runs `office-probe --site <key>` and reports only its own stages;
-# the office merges them into one pipeline. A site's `paths` override the global ones below.
+# All data stages run on K-BDS (prefetch included — 02_prefetch_kbds.sh in tmux on the login node, as in the runbook).
+# The lab Linux server is where metaFun itself is developed; that work shows up through Claude sessions
+# (office-extract) and their git commits, not through this plan. `office-probe --site kbds` reports the stages below.
 sites:
   local:
-    name: lab Linux server              # prefetch + vdb-validate (NCBI download), then upload to K-BDS dm node
-    paths:
-      PROJ: /data/metaCRC               # TODO: real path on the lab server
+    name: lab Linux server              # metaFun development only — no data stages here
   kbds:
     name: K-BDS (KISTI)
     login: bdata-login01                # login-only node: the probe is I/O-light (stat + read logs) and runs here
@@ -63,29 +62,19 @@ units:
 
 stages:
   - name: prefetch
-    desc: "prefetch + vdb-validate on the lab server (02_prefetch_local.sh, 6 parallel)"
-    where: local
+    desc: "prefetch + vdb-validate (02_prefetch_kbds.sh, tmux on the login node, 6 parallel)"
     unit: run
     units: {file: $RUNLIST}
     done: {kind: file, path: "$SRA_DIR/{run}/.validated"}
     failed: {log: "$LOG_DIR/prefetch.FAILED"}           # lines: "<run> PREFETCH_FAIL|VDB_INVALID"
+    implied_by: dump                                      # 03_dump deletes $SRA_DIR/<run> after a successful dump
     runner: {kind: shell, parallel: 6}
-
-  - name: upload
-    desc: "validated .sra → K-BDS dm node (kbds-dm.kisti.re.kr); marker written after a size check"
-    where: local
-    unit: run
-    units: {file: $RUNLIST}
-    after: [prefetch]
-    done: {kind: file, path: "$SRA_DIR/{run}/.uploaded"}
-    failed: {log: "$LOG_DIR/upload.FAILED"}
-    runner: {kind: shell, parallel: 4}
 
   - name: dump
     desc: "fasterq-dump → fastq.gz (03_dump.sbatch)"
     unit: run
     units: {file: $RUNLIST}
-    after: [upload]
+    after: [prefetch]
     done: {kind: file, path: "$FQ_DIR/{run}_1.fastq.gz"}
     failed: {log: "$LOG_DIR/dump.FAILED"}                # NOT_VALIDATED | NO_SRA | DUMP_FAIL
     runner: {kind: slurm, job: metacrc-dump, array: 1000, cpus: 8, mem: 24G, time_h: 12}

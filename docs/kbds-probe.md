@@ -6,7 +6,7 @@ K-BDS 로그인 노드에는 아무것도 설치하지 않는다. 파일 두 개
 ## 1. 올리기 (Mac에서)
 
 ```bash
-scp dist/office_probe.py examples/metaCRC/plan.yaml k260a01@kbds.kisti.re.kr:~/office/
+scp dist/office_probe.py examples/metaCRC/plan.yaml examples/metaCRC/02_prefetch_kbds.sh k260a01@kbds.kisti.re.kr:~/office/
 ```
 (`dist/office_probe.py`는 `python3 extractor/build_probe_bundle.py`로 만든 단일 파일. 의존성 없음.)
 
@@ -14,7 +14,7 @@ scp dist/office_probe.py examples/metaCRC/plan.yaml k260a01@kbds.kisti.re.kr:~/o
 
 ```bash
 cd ~/office && vi plan.yaml        # paths.PROJ 를 실제 경로로, pipeline.trace/log/work 를 metaFun 실행 위치로
-python3 office_probe.py show --plan plan.yaml | head -60     # 아무것도 안 보내고 읽은 결과만 출력
+python3 office_probe.py show --plan plan.yaml --site kbds | head -60     # 아무것도 안 보내고 읽은 결과만 출력
 ```
 `show`에 `note: unit list missing`이 보이면 `units.file` 경로가 틀린 것. Nextflow를 돌릴 때 `-with-trace $PROJ/run/trace.txt`를 붙여야 단계별 task 기록이 남는다(한 줄 = task 하나, 끝난 것만).
 
@@ -29,14 +29,15 @@ curl -sS -m 10 https://agent-office.hyeongwon-tg.workers.dev/api/health
 ```bash
 export OFFICE_TOKEN='<Cloudflare PROJECT_TOKENS 의 metaCRC 값>'
 export OFFICE_TO=https://agent-office.hyeongwon-tg.workers.dev
-python3 office_probe.py once --plan plan.yaml           # 한 번
-tmux new -s office -d 'python3 ~/office/office_probe.py loop --plan ~/office/plan.yaml --every 300'   # 5분마다, 계속
+python3 office_probe.py once --plan plan.yaml --site kbds           # 한 번
+tmux new -s office -d 'python3 ~/office/office_probe.py loop --plan ~/office/plan.yaml --site kbds --every 120'   # 2분마다, 계속
+# 또는 ./02_prefetch_kbds.sh office  (같은 일을 00_env_local.sh 설정으로)
 ```
 `tmux attach -t office`로 로그 확인. 로그인 노드가 재부팅되면 다시 띄운다. 전송에 실패하면 `~/.agent-office/spool/`에 남겨두고 다음 번에 다시 시도한다.
 
 **안 되면** (파일로):
 ```bash
-python3 office_probe.py once --plan plan.yaml --to ~/office/out     # pipeline/kbds/progress.json + summary.json
+python3 office_probe.py once --plan plan.yaml --site kbds --to ~/office/out     # pipeline/kbds/progress.json + summary.json
 ```
 `~/office/out`을 Mac에서 `scp`로 가져와 data repo clone에 넣고 push하면 웹훅 경로로 들어간다(분 단위 지연). 이 경우는 Mac에서 cron 한 줄로 자동화할 수 있다.
 
