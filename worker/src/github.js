@@ -5,7 +5,15 @@ import { b64url, b64urlText } from "./util.js";
 const UA = "agent-office-worker";
 
 // PEM → CryptoKey. GitHub hands out PKCS#1 ("BEGIN RSA PRIVATE KEY"); WebCrypto wants PKCS#8, so wrap if needed.
-async function importPem(pem) {
+export function normalizePem(pem) {
+  let t = String(pem || "").trim().replace(/^["']|["']$/g, "").replace(/\\n/g, "\n").replace(/\r/g, "");
+  const m = /-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/.exec(t);
+  if (!m) return t;
+  const body = m[2].replace(/\s+/g, "");
+  return `-----BEGIN ${m[1]}-----\n${body.match(/.{1,64}/g).join("\n")}\n-----END ${m[1]}-----\n`;
+}
+async function importPem(pemRaw) {
+  const pem = normalizePem(pemRaw);
   const body = pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
   let der = Uint8Array.from(atob(body), c => c.charCodeAt(0));
   if (/RSA PRIVATE KEY/.test(pem)) der = pkcs1ToPkcs8(der);
@@ -64,4 +72,12 @@ export async function userProfile(userToken) {
   if (!r.ok) return null;
   const u = await r.json();
   return { login: u.login, avatar: u.avatar_url };
+}
+
+export async function repoTree(env, repo, ref = "HEAD") {
+  const token = await installationToken(env, repo.split("/")[0]);
+  const r = await fetch(`https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": UA, "x-github-api-version": "2022-11-28" } });
+  if (!r.ok) throw new Error(`tree ${repo}: ${r.status}`);
+  const t = await r.json();
+  return (t.tree || []).filter(x => x.type === "blob").map(x => x.path);
 }

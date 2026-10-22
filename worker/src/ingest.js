@@ -38,7 +38,7 @@ export async function webhook(request, env, ctx) {
   return json({ ok: true, queued: paths.size });
 }
 
-async function processRepoPush(env, repo, sha, paths) {
+export async function processRepoPush(env, repo, sha, paths) {
   // Order matters: summary/project first (they name the project), then progress (session → project), then event chunks.
   const order = (f) => f === "summary.json" ? 0 : f === "project.json" ? 1 : RE_PROGRESS.test(f) ? 2 : RE_CHUNK.test(f) ? 3 : 9;
   const wanted = paths.filter(f => order(f) < 9).sort((a, b) => order(a) - order(b));

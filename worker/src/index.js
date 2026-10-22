@@ -3,6 +3,7 @@ import { callback, login, logout } from "./auth.js";
 import { discussions, floors, me, project, sessionData, ws } from "./api.js";
 import { direct, webhook } from "./ingest.js";
 import { json } from "./util.js";
+import { diag, resync } from "./admin.js";
 export { Floor } from "./floor.js";
 
 export default {
@@ -25,6 +26,8 @@ export default {
       if ((x = /^\/ws\/([^/]+)$/.exec(p))) return ws(request, env, decodeURIComponent(x[1]));
       if (p === "/ingest/github" && m === "POST") return webhook(request, env, ctx);
       if (p === "/ingest/events" && m === "POST") return direct(request, env);
+      if (p === "/api/admin/diag") return diag(request, env);
+      if (p === "/api/admin/resync") return resync(request, env);
       if (p === "/api/health") return json({ ok: true, at: new Date().toISOString() });
       if (p.startsWith("/api/") || p.startsWith("/ingest/")) return json({ error: "not found" }, 404);
       return env.ASSETS.fetch(request);
