@@ -46,15 +46,21 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);f
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
 button,select,label{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:250px minmax(0,1fr) 320px;gap:12px;min-height:100%}
+/* main column order: a floor with a pipeline leads with the 공정도, then 회의, then the office (only when it has sessions) */
+#top-card{order:-10} .app.has-pipe #pipe-card{order:-3} #talk-card{order:-2} #office-card{order:0}
+.app.no-sessions #office-card,.app.no-sessions .rail .card.sess{display:none!important} .app.no-sessions #top-card .controls{display:none}
+#office-card h2{padding-bottom:4px}
 @media (max-width:1180px){.app{grid-template-columns:220px minmax(0,1fr)} .rail{grid-column:1/-1}}
+@media (min-width:761px){.app.no-sessions{grid-template-columns:250px minmax(0,1fr)} .app.no-sessions .rail{display:none}}
 .tabs{display:none}
 @media (max-width:760px){
-  .app{grid-template-columns:minmax(0,1fr);gap:10px} .guide,.rail{grid-column:auto;display:contents}
-  .main{order:-2} .tabs{order:-1;display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+  .app{grid-template-columns:minmax(0,1fr);gap:10px} .app>.guide,.app>.rail,.app>.main{grid-column:auto;display:contents}
+  .tabs{order:-1;display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
   .tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px 4px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
   .tabs button.on{background:var(--accent);color:var(--accent-ink)}
-  .guide .card,.rail .card{display:none}
-  .app[data-tab="progress"] .card[data-tab="progress"],.app[data-tab="people"] .card[data-tab="people"],.app[data-tab="log"] .card[data-tab="log"],.app[data-tab="floors"] .card[data-tab="floors"]{display:block}
+  .guide .card,.rail .card,.main .card[data-tab]{display:none}
+  .app[data-tab="progress"] .card[data-tab="progress"],.app[data-tab="people"] .card[data-tab="people"],.app[data-tab="floors"] .card[data-tab="floors"]{display:block}
+  .app{align-content:start} #top-card{order:-3} #office-card{order:-2} .app.no-sessions #office-card{display:none} #pipe-card,#talk-card,.app.has-pipe #pipe-card{order:0}
   .topbar .title{font-size:14px} .controls{margin-left:0;width:100%}
 }
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
@@ -159,19 +165,14 @@ select.btn{padding:4px 6px}
 .task .tid{font-family:var(--mono);color:var(--muted);font-size:10px;flex:none;margin-top:1px}
 .files{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
 .files span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;max-height:360px;overflow:auto;font-size:11px}
-.log li{display:grid;grid-template-columns:62px 16px minmax(0,1fr);gap:6px;align-items:start}
-.log .lt{font-family:var(--mono);color:var(--muted);font-size:10px;margin-top:1px;white-space:nowrap}
-.log .la{width:14px;height:14px;border-radius:50%;margin-top:1px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;font-weight:600}
-.log .lc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.log .lc.say{white-space:normal}
 .legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:0 12px 12px;font-size:11px;color:var(--muted)}
 .legend b{color:var(--ink);font-weight:600}
 .legend i{display:inline-block;width:10px;height:10px;border:1px solid var(--line-strong);border-radius:2px;vertical-align:-1px;margin-right:5px}
 .note{font-size:11px;color:var(--muted);padding:0 12px 10px}
 /* 회의 · 토론 (GitHub Discussions) */
 .talk{display:flex;flex-direction:column;gap:8px}
-.talk .dlist{max-height:320px}
+.talk .dlist{max-height:420px}
+.ditem .dt{font-size:13px} .ditem{padding:9px 10px}
 .talk .row{display:flex;gap:8px;align-items:center}
 .dlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .ditem{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
@@ -192,26 +193,38 @@ select.btn{padding:4px 6px}
 .badge-new{font-size:10px;color:var(--accent);font-weight:600;margin-left:6px}
 /* 공정 (pipeline stages) */
 .pipe{display:flex;flex-direction:column;gap:10px}
-.pipe .head{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.pipe .head div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
-.pipe .head .v{font-family:var(--mono);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pipe .head .k{font-size:9px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
-.pst{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center}
-.pst .sn{font-weight:600;font-size:12px;display:flex;gap:6px;align-items:center;min-width:0}
-.pst .sn small{font-family:var(--mono);font-weight:400;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pst .sc{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
-.pst .bar{grid-column:1/-1;margin:0;display:flex;background:var(--paper);border:1px solid var(--line)}
-.pst .bar i{display:block;height:100%;border-radius:0;transition:width .6s}
-.pst .bar .d{background:var(--accent)} .pst .bar .r{background:color-mix(in srgb,var(--accent) 45%,transparent)} .pst .bar .f{background:var(--bad)}
-.pst .se{grid-column:1/-1;font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
-.pst .se b{color:var(--ink);font-weight:600}
-.pst.blocked .sn{color:var(--muted)}
+.pipe .big{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:end}
+.pipe .big .pct{font-family:var(--mono);font-size:28px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums}
+.pipe .big .pct small{font-size:12px;color:var(--muted);margin-left:8px;font-weight:400}
+.pipe .big .bar{grid-column:1/-1;height:12px;margin:4px 0 0;display:flex;border-radius:999px} .pipe .big .bar i{display:block;height:100%}
+.pipe .big .bar .d{background:var(--accent)} .pipe .big .bar .r{background:color-mix(in srgb,var(--accent) 45%,transparent)} .pipe .big .bar .f{background:var(--bad)}
+.pipe .head{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.flow{overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px}
+.flow svg{display:block;font-family:var(--font);max-width:100%;height:auto}
+@media (max-width:760px){.flow svg{max-width:none}}
+.flow .box{cursor:pointer} .flow .box rect.bg{fill:var(--paper);stroke:var(--line);stroke-width:1.2}
+.flow .box.sel rect.bg{stroke:var(--ink);stroke-width:1.6} .flow .box.run rect.bg{stroke:var(--accent);stroke-width:1.6}
+.flow .box.bad rect.bg{stroke:var(--bad)} .flow .box.off rect.bg{stroke-dasharray:4 3}
+.flow .box.done rect.bg{fill:color-mix(in srgb,var(--accent) 12%,var(--paper))}
+.flow .fill{fill:color-mix(in srgb,var(--accent) 28%,transparent)} .flow .fillr{fill:color-mix(in srgb,var(--accent) 14%,transparent)} .flow .fillf{fill:color-mix(in srgb,var(--bad) 45%,transparent)}
+.flow text{fill:var(--ink)} .flow .nm{font-weight:700;font-size:12px} .flow .pc{font-family:var(--mono);font-size:17px;font-weight:500} .flow .sm{font-size:10px;fill:var(--muted);font-family:var(--mono)}
+.flow .st{font-size:10px;fill:var(--muted)} .flow .st.run{fill:var(--accent);font-weight:600} .flow .st.bad{fill:var(--bad);font-weight:600}
+.flow .edge{fill:none;stroke:var(--line-strong);stroke-width:1.4} .flow .edge.on{stroke:var(--accent)}
+.flow .box.off text{fill:var(--muted)}
+.sdetail{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.sdetail .l1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;color:var(--ink)} .sdetail .l1 b{font-size:13px} .sdetail .l1 small{font-family:var(--mono);color:var(--muted)}
+.sdetail .kv2{display:flex;gap:12px;flex-wrap:wrap} .sdetail .kv2 b{color:var(--ink);font-weight:600}
+.sdetail ul{margin:0;padding:0;list-style:none;font-family:var(--mono);font-size:10px;max-height:96px;overflow:auto} .sdetail ul li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe .head>div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.pipe .head .v{font-family:var(--mono);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe .head .k{font-size:9px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+@media (max-width:760px){.pipe .head{grid-template-columns:repeat(3,1fr)}}
 .cluster{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
 .cluster .row{display:flex;justify-content:space-between;gap:8px} .cluster .row b{color:var(--ink);font-weight:600;font-family:var(--mono)}
 .unplanned{font-size:11px;color:var(--muted)} .unplanned code{font-family:var(--mono);background:var(--paper);padding:1px 4px;border-radius:4px}
-@media (max-width:760px){.app[data-tab="pipe"] .card[data-tab="pipe"]{display:block}}
-@media (max-width:760px){.app[data-tab="talk"] .card[data-tab="talk"]{display:block}}
-@media (max-width:760px){.app[data-tab="docs"] .card[data-tab="docs"]{display:block}}
+@media (max-width:760px){.app[data-tab="pipe"] .card[data-tab="pipe"]{display:block!important}}
+@media (max-width:760px){.app[data-tab="talk"] .card[data-tab="talk"]{display:block!important}}
+@media (max-width:760px){.app[data-tab="docs"] .card[data-tab="docs"]{display:block!important}}
 /* ---- 자료실 ---- */
 .docs{display:flex;flex-direction:column;gap:8px}
 .docs .row{display:flex;gap:6px;flex-wrap:wrap}
@@ -234,21 +247,17 @@ select.btn{padding:4px 6px}
 <!--OFFICE:BODY-START-->
 <div class="app" id="app" data-tab="progress">
   <nav class="tabs" aria-label="패널">
-    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="pipe">공정</button><button type="button" data-t="talk">회의</button><button type="button" data-t="docs">자료</button><button type="button" data-t="log">로그</button><button type="button" data-t="floors">층</button>
+    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="pipe">공정</button><button type="button" data-t="talk">회의</button><button type="button" data-t="docs">자료</button><button type="button" data-t="floors">층</button>
   </nav>
   <aside class="guide">
     <section class="card" data-tab="floors">
       <h2>층별 안내 <span class="n">FLOOR GUIDE</span></h2>
       <ul class="floors" id="floors"></ul>
-      <label class="follow"><input type="checkbox" id="follow" checked> 최근 세션 자동으로 따라가기</label>
+      <label class="follow"><input type="checkbox" id="follow" checked> 이 층의 최신 세션 따라가기</label>
     </section>
     <section class="card" data-tab="floors">
       <h2>이 층의 세션 <span class="n" id="ses-n"></span></h2>
       <ul class="sessions" id="sessions"></ul>
-    </section>
-    <section class="card" data-tab="talk" id="talk-card" hidden>
-      <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
-      <div class="sec talk" id="talk"></div>
     </section>
     <section class="card" data-tab="docs" id="docs-card" hidden>
       <h2>자료실 · 문서 <span class="n" id="x-n"></span></h2>
@@ -257,7 +266,7 @@ select.btn{padding:4px 6px}
   </aside>
 
   <main class="main">
-    <section class="card">
+    <section class="card" id="top-card">
       <div class="topbar">
         <span class="title"><span class="no" id="t-floor">—</span><span id="t-project">Agent Office</span></span>
         <span class="sub" id="t-session"></span>
@@ -269,6 +278,17 @@ select.btn{padding:4px 6px}
           <select class="btn" id="speed" aria-label="재생 속도"><option value="20">20×</option><option value="60" selected>60×</option><option value="300">300×</option></select>
         </div>
       </div>
+    </section>
+    <section class="card" data-tab="pipe" id="pipe-card" hidden>
+      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
+      <div class="sec pipe" id="pipe"></div>
+    </section>
+    <section class="card" data-tab="talk" id="talk-card" hidden>
+      <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
+      <div class="sec talk" id="talk"></div>
+    </section>
+    <section class="card" id="office-card">
+      <h2>사무실 <span class="n" id="o-n"></span></h2>
       <div class="scrub" id="scrub" hidden><span id="s-time">00:00:00</span><input type="range" id="s-range" min="0" max="0" value="0" aria-label="타임라인"><span id="s-count">0/0</span></div>
       <div class="stage" id="stage">
         <canvas id="iso"></canvas>
@@ -292,27 +312,19 @@ select.btn{padding:4px 6px}
         <div><div class="v" id="k-think">0s</div><div class="k">thinking</div></div>
       </div>
     </section>
-    <section class="card" data-tab="pipe" id="pipe-card" hidden>
-      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
-      <div class="sec pipe" id="pipe"></div>
-    </section>
-    <section class="card" data-tab="people">
+    <section class="card sess" data-tab="people">
       <h2>사무실 사람들 <span class="n" id="p-count"></span></h2>
       <div class="sec people" id="people"></div>
     </section>
-    <section class="card" data-tab="progress">
+    <section class="card sess" data-tab="progress">
       <h2>할 일 목록 <span class="n" id="t-n"></span></h2>
       <div class="sec"><ul class="tasks" id="tasks"></ul><button class="btn tasks-toggle" type="button" id="tasks-done-toggle" hidden></button><ul class="tasks done" id="tasks-done" hidden></ul></div>
     </section>
-    <section class="card" data-tab="progress">
+    <section class="card sess" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
     </section>
-    <section class="card" data-tab="log">
-      <h2>활동 로그</h2>
-      <div class="sec"><ul class="log" id="log"></ul></div>
-    </section>
-    <section class="card" data-tab="floors">
+    <section class="card sess" data-tab="floors">
       <h2>어디서 무엇을 하나</h2>
       <div class="legend" id="legend"></div>
     </section>
@@ -881,13 +893,6 @@ function renderPeople() {
     list.push(row(c.actor, type || '에이전트', ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[type] || '--c-other', descOf(c.actor.slice(6)), c.gone)); }
   $('people').innerHTML = list.join(''); $('p-count').textContent = `${list.length}명 근무`;
 }
-function renderLog() {
-  const upto = S.mode === 'replay' ? S.cursor : S.events.length;
-  const rows = S.events.slice(0, upto).filter(e => !['tool_done', 'session_start'].includes(e.kind)).slice(-50).reverse();
-  $('log').innerHTML = rows.map(e => { const t = e.actor === 'claude' ? ['C', '--c-claude'] : e.actor === 'user' ? ['나', '--c-user'] : [((e.meta || {}).agentType || agentTypeOf(e.actor) || 'A')[0], ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[(e.meta || {}).agentType || agentTypeOf(e.actor)] || '--c-other'];
-    const text = e.kind === 'think' ? `💭 ${fmtDur(e.dur_ms || 0)} 고민` : e.kind === 'tool' ? `${toolIcon(e.tool)} ${e.room && ROOMS[e.room] ? ROOMS[e.room].ko + ' · ' : ''}${e.caption || e.tool}` : e.kind === 'tool_err' ? `❌ ${e.caption || ''}` : e.kind === 'spawn' ? `🛗 출근 · ${e.caption || ''}` : e.kind === 'finish' ? `👋 퇴근 · ${e.caption || ''}` : e.kind === 'interrupt' ? '✋ 잠깐, 멈춰!' : e.caption || e.kind;
-    return `<li><span class="lt">${fmtClock(tsOf(e))}</span><span class="la" style="background:var(${t[1]})">${esc(t[0])}</span><span class="lc ${e.kind === 'say' || e.kind === 'prompt' ? 'say' : ''}">${esc(text)}</span></li>`; }).join('') || '<li class="note">아직 활동이 없습니다</li>';
-}
 function renderFloors() {
   const projects = (S.index && S.index.projects) || []; const N = projects.length;
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
@@ -917,6 +922,7 @@ async function loadPipeline() {
   } catch (e) { /* no plan yet */ }
   const has = (PP.plan && (PP.plan.stages || []).length) || PP.run;
   card.hidden = !has; if (has) renderPipeline();
+  $('app').classList.toggle('has-pipe', !!has);
 }
 function mergeRuns(runs) {
   if (!runs.length) return null;
@@ -928,42 +934,78 @@ function mergeRuns(runs) {
 }
 const fmtH = h => h == null ? '—' : h < 1 ? `${Math.round(h * 60)}분` : h < 48 ? `${h.toFixed(1)}시간` : `${(h / 24).toFixed(1)}일`;
 const fmtWhen = iso => iso ? new Date(iso).toLocaleString('ko-KR', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+const PV = {sel: null};
+function stageInfo(name, plan, run) {
+  const ps = (plan.stages || []).find(s => s.name === name) || {}; const st = (run.stages || {})[name] || {};
+  const total = st.total ?? null; const done = st.done || 0; const failed = st.failed || 0; const running = st.running || 0; const pending = st.pending || 0;
+  const after = ps.after || st.after || [];
+  const complete = total != null && total > 0 && done >= total;
+  const blocked = after.some(d => { const x = (run.stages || {})[d]; return x && x.total && x.done < x.total; }) && !done && !running;
+  const planned = total != null;
+  const state = !planned ? 'off' : complete ? 'done' : running ? 'run' : failed && !done ? 'bad' : blocked ? 'wait' : done ? 'part' : 'idle';
+  return {name, ps, st, total, done, failed, running, pending, after, unit: ps.unit || st.unit || '', runner: ps.runner || {}, desc: ps.desc || st.desc || '', complete, blocked, planned, state, site: st.site};
+}
 function renderPipeline() {
   const el = $('pipe'); const plan = PP.plan || {stages: []}; const run = PP.run || {stages: {}};
   const order = (plan.stages || []).map(s => s.name); for (const k of Object.keys(run.stages || {})) if (!order.includes(k)) order.push(k);
-  const roll = run.rollup || null;
-  $('pp-n').textContent = roll && roll.total ? `${roll.done}/${roll.total} · ${Math.round((roll.ratio || 0) * 100)}%` : (run.probedAt ? '총량 미정' : '');
-  const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo)); const cl = {canSubmit: (run.sites || []).some(x => x.canSubmit === true) ? true : ((run.sites || []).some(x => x.canSubmit === false) ? false : null)};
+  const roll = run.rollup || null; const info = {}; for (const n of order) info[n] = stageInfo(n, plan, run);
+  $('pp-n').textContent = roll && roll.total ? `${roll.done.toLocaleString()} / ${roll.total.toLocaleString()}` : (run.probedAt ? '총량 미정' : '');
+  const sites = run.sites || []; const canSubmit = sites.some(x => x.canSubmit === true) ? true : (sites.some(x => x.canSubmit === false) ? false : null);
   const etaMax = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.eta && s.eta.hours) || 0));
-  let html = `<div class="head">
-    <div><div class="v">${roll ? `${roll.running}` : '—'}</div><div class="k">running</div></div>
-    <div><div class="v" style="${roll && roll.failed ? 'color:var(--bad)' : ''}">${roll ? roll.failed : '—'}</div><div class="k">failed</div></div>
-    <div><div class="v">${etaMax ? fmtH(etaMax) : '—'}</div><div class="k">ETA</div></div>
-    <div><div class="v">${cl.canSubmit == null ? '—' : cl.canSubmit ? '여유' : '꽉 참'}</div><div class="k">노드</div></div></div>`;
-  for (const name of order) {
-    const ps = (plan.stages || []).find(s => s.name === name) || {}; const st = (run.stages || {})[name] || {};
-    const total = st.total ?? null; const done = st.done || 0; const failed = st.failed || 0; const running = st.running || 0; const pending = st.pending || 0;
-    const pct = v => total ? `${Math.max(0, Math.min(100, v / total * 100))}%` : '0%';
-    const deps = (ps.after || st.after || []); const blocked = deps.some(d => { const x = (run.stages || {})[d]; return x && x.total && x.done < x.total; }) && !done && !running;
-    const unit = ps.unit || st.unit || ''; const runner = ps.runner || {};
-    html += `<div class="pst ${blocked ? 'blocked' : ''}">
-      <div class="sn">${esc(name)}${st.site ? `<small style="flex:none">@${esc(st.site)}</small>` : ''}<small title="${esc(ps.desc || st.desc || '')}">${esc(ps.desc || st.desc || '')}</small></div>
-      <div class="sc">${total != null ? `${done}/${total} ${esc(unit)}` : (st.note ? '총량 미정' : `${done} ${esc(unit)}`)}</div>
-      <div class="bar"><i class="d" style="width:${pct(done)}"></i><i class="r" style="width:${pct(running)}"></i><i class="f" style="width:${pct(failed)}"></i></div>
-      <div class="se">${running ? `<span>▶ <b>${running}</b> 실행</span>` : ''}${pending ? `<span>⏳ <b>${pending}</b> 대기</span>` : ''}${failed ? `<span style="color:var(--bad)">✕ <b>${failed}</b> 실패</span>` : ''}
-        ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h</span>` : ''}${st.eta ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> (${fmtWhen(st.eta.at)})</span>` : (total && done < total && !st.note ? '<span>ETA — 아직 측정 전</span>' : '')}
-        ${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 ${fmtRel(st.lastAt)}</span>` : ''}
-        ${runner.job ? `<span class="mono">${esc(runner.job)}${runner.time_h ? ` · ${runner.time_h}h` : ''}${runner.mem ? ` · ${esc(runner.mem)}` : ''}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div></div>`;
-  }
-  const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
+  const probedAt = run.probedAt || (sites.map(x => x.probedAt).sort().pop()) || null;
+  const pct = roll && roll.total ? Math.round((roll.ratio || 0) * 1000) / 10 : null; const w = v => roll && roll.total ? `${Math.max(0, Math.min(100, v / roll.total * 100))}%` : '0%';
+  let html = `<div class="big"><div class="pct">${pct == null ? '—' : `${pct}%`}<small>${roll && roll.total ? `${roll.done.toLocaleString()} / ${roll.total.toLocaleString()} 완료` : '총량 미정'}</small></div>
+    <div class="sc" style="font-size:11px;color:var(--muted)">${etaMax ? `전체 ETA <b style="color:var(--ink)">${fmtH(etaMax)}</b>` : 'ETA — 측정 전'}</div>
+    <div class="bar"><i class="d" style="width:${w(roll ? roll.done : 0)}"></i><i class="r" style="width:${w(roll ? roll.running : 0)}"></i><i class="f" style="width:${w(roll ? roll.failed : 0)}"></i></div></div>
+    <div class="head">
+    <div><div class="v">${roll ? roll.running : '—'}</div><div class="k">실행 중</div></div>
+    <div><div class="v" style="${roll && roll.failed ? 'color:var(--bad)' : ''}">${roll ? roll.failed : '—'}</div><div class="k">실패</div></div>
+    <div><div class="v">${Object.values(info).filter(i => i.complete).length}/${order.length}</div><div class="k">단계 완료</div></div>
+    <div><div class="v">${canSubmit == null ? '—' : canSubmit ? '여유' : '꽉 참'}</div><div class="k">노드</div></div>
+    <div><div class="v">${probedAt ? fmtRel(probedAt) : '—'}</div><div class="k">프로브</div></div></div>`;
+  // ---- flow diagram: columns by dependency depth, rows for parallel stages
+  const depth = {}; const dep = n => { if (depth[n] != null) return depth[n]; depth[n] = 0; const a = (info[n] || {}).after || []; depth[n] = a.length ? 1 + Math.max(...a.map(x => info[x] ? dep(x) : -1)) : 0; return depth[n]; };
+  order.forEach(dep);
+  const cols = []; for (const n of order) { const d = depth[n]; (cols[d] = cols[d] || []).push(n); }
+  const CW = 126, CH = 92, GX = 30, GY = 16, PAD = 10; const rows = Math.max(1, ...cols.map(c => c.length));
+  const W = PAD * 2 + cols.length * CW + (cols.length - 1) * GX; const H = PAD * 2 + rows * CH + (rows - 1) * GY;
+  const pos = {}; cols.forEach((c, d) => { const off = (rows - c.length) * (CH + GY) / 2; c.forEach((n, i) => { pos[n] = {x: PAD + d * (CW + GX), y: PAD + off + i * (CH + GY)}; }); });
+  if (!PV.sel || !info[PV.sel]) PV.sel = order.find(n => info[n].state === 'run') || order.find(n => info[n].planned && !info[n].complete) || order[0];
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="공정도">`;
+  for (const n of order) for (const a of info[n].after) { if (!pos[a]) continue; const p1 = pos[a], p2 = pos[n]; const x1 = p1.x + CW, y1 = p1.y + CH / 2, x2 = p2.x, y2 = p2.y + CH / 2; const mx = (x1 + x2) / 2;
+    svg += `<path class="edge ${info[a].complete ? 'on' : ''}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`; }
+  for (const n of order) { const i = info[n]; const q = pos[n]; const r = i.total ? Math.min(1, i.done / i.total) : 0; const rr = i.total ? Math.min(1 - r, i.running / i.total) : 0; const rf = i.total ? Math.min(1 - r - rr, i.failed / i.total) : 0;
+    const inner = CH - 2; const hFill = Math.round(inner * r), hRun = Math.round(inner * rr), hF = Math.round(inner * rf);
+    const status = i.state === 'off' ? '미계획' : i.complete ? '완료 ✓' : i.running ? `▶ ${i.running} 실행${i.failed ? ` · ✕ ${i.failed}` : ''}` : i.failed ? `✕ ${i.failed} 실패` : i.blocked ? '앞 단계 대기' : (i.st.eta ? `ETA ${fmtH(i.st.eta.hours)}` : i.done ? '진행 중' : '대기');
+    const cls = i.state === 'off' ? 'off' : i.state === 'done' ? 'done' : i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : '';
+    svg += `<g class="box ${cls} ${PV.sel === n ? 'sel' : ''}" data-n="${esc(n)}" tabindex="0" transform="translate(${q.x},${q.y})">
+      <rect class="bg" x="0" y="0" width="${CW}" height="${CH}" rx="10"/>
+      <clipPath id="c-${esc(n)}"><rect x="1" y="1" width="${CW - 2}" height="${CH - 2}" rx="9"/></clipPath>
+      <g clip-path="url(#c-${esc(n)})"><rect class="fill" x="1" y="${1 + inner - hFill}" width="${CW - 2}" height="${hFill}"/><rect class="fillr" x="1" y="${1 + inner - hFill - hRun}" width="${CW - 2}" height="${hRun}"/><rect class="fillf" x="1" y="${1 + inner - hFill - hRun - hF}" width="${CW - 2}" height="${hF}"/></g>
+      <text class="nm" x="10" y="19">${esc(n)}</text>${i.site && sites.length > 1 ? `<text class="sm" x="${CW - 8}" y="19" text-anchor="end">@${esc(i.site)}</text>` : ''}
+      <text class="pc" x="10" y="48">${i.total ? `${Math.round(r * 100)}%` : (i.done ? i.done : '—')}</text>
+      <text class="sm" x="10" y="63">${i.total ? `${i.done.toLocaleString()} / ${i.total.toLocaleString()} ${esc(i.unit)}` : (i.st.note ? '목록 없음' : esc(i.unit))}</text>
+      <text class="st ${i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : ''}" x="10" y="${CH - 11}">${esc(status)}</text></g>`; }
+  svg += '</svg>';
+  html += `<div class="flow">${svg}</div><div class="sdetail" id="sdetail"></div>`;
+  const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo));
   for (const r of runsWithCluster) { const sq = r.cluster.squeue, si = r.cluster.sinfo;
     html += `<div class="cluster"><div class="row"><span>${esc(r.site || r.id)} · Slurm ${esc((sq && sq.user) || '')}</span><b>${sq ? `${(sq.byState || {}).RUNNING || 0} 실행 · ${(sq.byState || {}).PENDING || 0} 대기` : ''}</b></div>`;
     if (sq && Object.keys(sq.pendingReasons || {}).length) html += `<div class="row"><span>대기 사유</span><b>${Object.entries(sq.pendingReasons).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</b></div>`;
-    for (const [pn, p] of Object.entries((si && si.partitions) || {})) html += `<div class="row"><span>${esc(pn)}</span><b>idle ${p.idle} / ${p.total}</b></div>`;
+    const parts = Object.entries((si && si.partitions) || {}); if (parts.length) html += `<div class="row"><span>파티션 idle</span><b>${parts.map(([pn, p]) => `${esc(pn)} ${p.idle}/${p.total}`).join(' · ')}</b></div>`;
     html += `</div>`; }
-  if ((run.sites || []).length) html += `<div class="cluster">${run.sites.map(x => `<div class="row"><span>프로브 · ${esc(x.site)}</span><b>${x.probedAt ? fmtRel(x.probedAt) : '—'}</b></div>`).join('')}</div>`;
+  const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
   if ((plan.milestones || []).length) html += `<div class="cluster">${plan.milestones.map(m => `<div class="row"><span>🏁 ${esc(m.name)}</span><b>${esc(m.date)}</b></div>`).join('')}</div>`;
   el.innerHTML = html;
+  const detail = () => { const i = info[PV.sel]; if (!i) { $('sdetail').hidden = true; return; } $('sdetail').hidden = false; const st = i.st; const rn = i.runner;
+    const failedJobs = (PP.runs || []).flatMap(r => Object.entries(r.jobs || {}).filter(([k, j]) => j.stage === i.name && j.status === 'failed').map(([k, j]) => `${k.split(':').slice(1).join(':')} ${j.msg || ''}`));
+    $('sdetail').innerHTML = `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
+      <div class="kv2">${i.total != null ? `<span>완료 <b>${i.done.toLocaleString()}</b> / ${i.total.toLocaleString()} ${esc(i.unit)}</span>` : ''}${i.running ? `<span>실행 <b>${i.running}</b></span>` : ''}${i.pending ? `<span>대기 <b>${i.pending}</b></span>` : ''}${i.failed ? `<span style="color:var(--bad)">실패 <b>${i.failed}</b></span>` : ''}
+        ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h (12h)</span>` : ''}${st.rates && st.rates.per_h_3h ? `<span><b>${st.rates.per_h_3h >= 10 ? Math.round(st.rates.per_h_3h) : st.rates.per_h_3h.toFixed(1)}</b>/h (3h)</span>` : ''}
+        ${st.eta ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : '')}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
+      ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; };
+  detail();
+  el.querySelectorAll('.flow .box').forEach(g => { const go = () => { PV.sel = g.dataset.n; el.querySelectorAll('.flow .box').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }
 
@@ -1068,7 +1110,9 @@ async function boot() {
   await loadIndex();
   renderFloors();
   const want = new URLSearchParams(location.hash.slice(1));                     // deep links from discussion posts: #p=<project>&s=<session>
-  const projects = (S.index.projects || []).filter(p => !p.locked); const i = Math.max(0, want.get('p') ? projects.findIndex(p => p.name === want.get('p')) : projects.findIndex(p => p.active));
+  let stored = null; try { stored = localStorage.getItem('office.floor'); } catch (e) { /* no storage */ }
+  const projects = (S.index.projects || []).filter(p => !p.locked);
+  const i = Math.max(0, want.get('p') ? projects.findIndex(p => p.name === want.get('p')) : stored && projects.some(p => p.name === stored) ? projects.findIndex(p => p.name === stored) : projects.findIndex(p => p.active));
   S.wantSession = want.get('s') || null;
   if (projects.length) await selectProject(projects[i].key || projects[i].name, (S.index.projects || []).length - (S.index.projects || []).indexOf(projects[i]), false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
   setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
@@ -1093,30 +1137,38 @@ function renderAuth() {
   if (MODE !== 'github') { a.hidden = true; return; }
   if (!GHUB.token) { a.innerHTML = '<a class="btn" href="auth/login">GitHub로 로그인</a>'; return; }
   a.innerHTML = `${GHUB.user ? `<img src="${esc(GHUB.user.avatar_url)}" alt=""><span>${esc(GHUB.user.login)}</span>` : '<span>로그인됨</span>'}<button class="btn" type="button" id="b-logout">로그아웃</button>`;
-  $('b-logout').onclick = () => { ghLogout(); S.index = {projects: []}; S.events = []; S.progress = null; resetFloor(); renderAuth(); renderFloors(); renderSessions(); renderPeople(); renderLog(); $('t-project').textContent = 'Agent Office'; };
+  $('b-logout').onclick = () => { ghLogout(); S.index = {projects: []}; S.events = []; S.progress = null; resetFloor(); renderAuth(); renderFloors(); renderSessions(); renderPeople(); $('t-project').textContent = 'Agent Office'; };
   if (!GHUB.user) ghFetch('/user').then(u => { GHUB.user = u; renderAuth(); }).catch(() => {});
 }
 async function followLatest() {
   await loadIndex();
   renderFloors();
-  if (!$('follow').checked) return;
-  const projects = (S.index.projects || []).filter(p => !p.locked); const active = projects.find(p => p.active);
-  if (active && (active.key || active.name) !== (S.floorKey || S.project)) { await selectProject(active.key || active.name, (S.index.projects || []).length - (S.index.projects || []).indexOf(active), true); return; }
+  if (!$('follow').checked || !S.project) return;
+  // Never hop floors on its own: the person picked this floor (or a deep link did). Only the newest session *of this floor* is followed.
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { return; }
-  renderSessions();
+  renderSessions(); applyFloorShape();
   const newest = (S.projectInfo.sessions || [])[0];
   if (newest && newest.session !== S.session && (liveStatus(newest) === 'active' || !(S.progress && liveStatus(S.progress) === 'active'))) await selectSession(newest.session);
+}
+/** Body classes that drive the main-column layout: has-pipe (공정도 first) and no-sessions (office hidden). */
+function applyFloorShape() {
+  const n = ((S.projectInfo && S.projectInfo.sessions) || []).length;
+  $('app').classList.toggle('no-sessions', n === 0);
+  $('app').classList.toggle('has-pipe', !$('pipe-card').hidden);
+  $('o-n').textContent = n ? `세션 ${n}개` : '';
 }
 async function selectProject(key, no, showIndicator) {
   const floor = (S.index.projects || []).find(p => (p.key || p.name) === key) || {name: key};
   S.project = floor.name; S.repo = floor.repo || null; S.floorKey = key; S.floorNo = no; renderFloors(); $('t-floor').textContent = `${no}F`;
+  try { localStorage.setItem('office.floor', floor.name); } catch (e) { /* no storage */ }
+  if (location.hash && !location.hash.startsWith('#gh=')) { const q = new URLSearchParams(location.hash.slice(1)); if (q.get('p') !== floor.name) history.replaceState(null, '', `${location.pathname}#p=${encodeURIComponent(floor.name)}`); }
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
   if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); loadDocs(); } else { $('talk-card').hidden = true; $('docs-card').hidden = true; }
-  loadPipeline();
+  await loadPipeline(); applyFloorShape();
   const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
-  if (s) await selectSession(s.session); else { S.session = null; S.events = []; S.progress = null; $('t-project').textContent = S.project; $('t-session').textContent = ''; clearInterval(S.pollTimer); resetFloor(); renderProgress(); renderPeople(); renderLog(); }
+  if (s) await selectSession(s.session); else { S.session = null; S.events = []; S.progress = null; $('t-project').textContent = S.project; $('t-session').textContent = ''; clearInterval(S.pollTimer); resetFloor(); renderProgress(); renderPeople(); }
 }
 async function selectSession(ses) {
   S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
@@ -1152,7 +1204,7 @@ async function refresh(full) {
   const known = S.events.length; S.events = events || [];
   if (full || known === 0 || S.events.length < known) { resetFloor(); for (const e of S.events) applyEvent(e, true); S.cursor = S.events.length; }
   else { const fresh = S.events.slice(known); fresh.forEach((e, i) => setTimeout(() => applyEvent(e, false), i * 400)); S.cursor = S.events.length; }
-  S.static = buildStatic(); renderProgress(); renderPeople(); renderLog();
+  S.static = buildStatic(); renderProgress(); renderPeople();
   const cl = S.chars.claude; const lastE = S.events[S.events.length - 1];
   if (cl && lastE && !['tool', 'say'].includes(lastE.kind)) { cl.lastKind = lastE.kind === 'prompt' ? 'prompt' : 'tool_done'; cl.lastT = tsOf(lastE); }
 }
@@ -1160,7 +1212,7 @@ function startReplay() {
   if (!S.events.length) return;
   stopReplay(); S.mode = 'replay'; $('b-live').classList.remove('on'); $('b-replay').classList.add('on'); $('scrub').hidden = false;
   resetFloor(); const r = S.replay; r.speed = +$('speed').value; r.vt = tsOf(S.events[0]); r.last = performance.now(); r.jumpFor = -1; S.clock = () => r.vt;
-  $('s-range').max = S.events.length; $('s-range').value = 0; renderPeople(); renderLog();
+  $('s-range').max = S.events.length; $('s-range').value = 0; renderPeople();
   r.timer = setInterval(stepReplay, 100);
 }
 function stepReplay() {
@@ -1173,12 +1225,12 @@ function stepReplay() {
   $('s-time').textContent = fmtClock(r.vt);
   if (r.vt < target) return;
   let n = 0; while (S.cursor < S.events.length && tsOf(S.events[S.cursor]) <= r.vt && n < 6) { applyEvent(S.events[S.cursor], false); S.cursor++; n++; }
-  $('s-range').value = S.cursor; $('s-count').textContent = `${S.cursor}/${S.events.length}`; renderPeople(); renderLog();
+  $('s-range').value = S.cursor; $('s-count').textContent = `${S.cursor}/${S.events.length}`; renderPeople();
 }
 function stopReplay(finished) { const r = S.replay; clearInterval(r.timer); r.timer = null; S.clock = () => Date.now();
   if (finished) { $('b-replay').classList.remove('on'); $('s-count').textContent = `${S.events.length}/${S.events.length} · 끝`; } }
 function seekReplay(n) { const r = S.replay; resetFloor(); S.cursor = 0; for (let i = 0; i < n; i++) { applyEvent(S.events[i], true); S.cursor++; }
-  r.vt = n ? tsOf(S.events[n - 1]) : tsOf(S.events[0]); r.last = performance.now(); r.jumpFor = -1; $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt); renderPeople(); renderLog(); }
+  r.vt = n ? tsOf(S.events[n - 1]) : tsOf(S.events[0]); r.last = performance.now(); r.jumpFor = -1; $('s-count').textContent = `${S.cursor}/${S.events.length}`; $('s-time').textContent = fmtClock(r.vt); renderPeople(); }
 $('b-live').onclick = () => { if (S.mode === 'live') return; stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true; refresh(true); };
 $('b-replay').onclick = () => startReplay();
 $('speed').onchange = () => { if (S.mode === 'replay') S.replay.speed = +$('speed').value; };
