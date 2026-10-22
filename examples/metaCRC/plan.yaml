@@ -36,7 +36,7 @@ pipeline:
 paths:
   PROJ: /scratch/$USER/metaCRC
   MANIFEST: $PROJ/manifest/run_manifest.tsv
-  RUNLIST: $PROJ/manifest/runs_all.txt
+  RUNLIST: $PROJ/manifest/runs_paired.txt   # PAIRED only (8,420). runs_all.txt (10,481) kept for reference
   MULTI: $PROJ/manifest/samples_multirun.txt
   ASMLIST: $PROJ/manifest/samples_assemble.txt
   SRA_DIR: $PROJ/sra
@@ -50,11 +50,11 @@ paths:
 
 # Facts from the manifest (2026-10-22): 10,481 runs / 9,656 samples / 27 cohorts;
 # PAIRED 8,420 · SINGLE 2,061; multirun PAIRED samples 322 (PRJEB6070 196 · PRJEB12449 110 · PRJEB27928 16);
-# 79 runs > 20 GB (.sra). Decide: SINGLE runs (2,061) will fail 03_dump under the paired-only policy
-# unless removed from runs_all.txt.
+# 79 runs > 20 GB (.sra). Decision 2026-10-22: SINGLE runs (2,061) are excluded — runs_paired.txt (8,420) is
+# the run list for every per-run stage; runs_single_excluded.txt records what was left out.
 units:
   run:
-    file: $RUNLIST                      # one id per line (10,481)
+    file: $RUNLIST                      # one id per line (8,420 PAIRED)
   sample_multirun:
     file: $MULTI                        # 322
   sample_assemble:

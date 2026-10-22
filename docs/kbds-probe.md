@@ -51,6 +51,6 @@ python3 office_probe.py once --plan plan.yaml --site kbds --to ~/office/out     
 
 샘플·런 id는 K-BDS 밖으로 나가지 않는다. 개수와 실패 사유만 나간다(실패 사유 줄에는 런 id가 포함됨 — 공개 accession이라 괜찮다고 보지만, 가리려면 `failed:` 블록을 지우면 된다).
 
-## 5. SINGLE 런 2,061개
+## 5. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
 
-런북 그대로면 `03_dump`에서 SINGLE 런은 `_2`가 없어 전부 `DUMP_FAIL`로 떨어진다. 진행도가 80%에서 멈추고 실패 2,061건이 쌓이므로, `runs_all.txt`에서 SINGLE을 빼거나(총량 8,420) SINGLE 경로를 따로 두는 쪽을 먼저 정해야 한다.
+`runs_paired.txt`(8,420, PAIRED만)가 모든 런 단위 단계의 목록이다. `runs_single_excluded.txt`에 빠진 2,061개를 남겨 둔다. 런북의 03_dump 이후 sbatch 스크립트도 `RUNLIST`를 `runs_paired.txt`로 바꿔야 한다(00_env.sh 한 줄).

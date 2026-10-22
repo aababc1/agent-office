@@ -19,7 +19,7 @@ cat > 00_env_local.sh <<'ENV'
 # ── K-BDS paths (edit; same as the runbook's 00_env.sh) ────────
 export PROJ=/scratch/$USER/metaCRC
 export MANIFEST=$PROJ/manifest/run_manifest.tsv
-export RUNLIST=$PROJ/manifest/runs_all.txt    # decide first: keep SINGLE runs (2,061) or not
+export RUNLIST=$PROJ/manifest/runs_paired.txt # PAIRED only (8,420); SINGLE excluded (runs_single_excluded.txt)
 export SRA_DIR=$PROJ/sra                       # prefetch output (.sra; 03_dump deletes it after a good dump)
 export LOG_DIR=$PROJ/logs
 export PARALLEL=6                              # >6 and NCBI throttles (runbook)
