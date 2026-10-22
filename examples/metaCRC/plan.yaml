@@ -63,6 +63,7 @@ units:
 stages:
   - name: prefetch
     desc: "prefetch + vdb-validate (02_prefetch_kbds.sh, tmux on the login node, 6 parallel)"
+    icon: dock                            # viewer glyph: dock | unpack | sieve | funnel | build | bins | inspect | machine
     unit: run
     units: {file: $RUNLIST}
     done: {kind: file, path: "$SRA_DIR/{run}/.validated"}
@@ -72,6 +73,7 @@ stages:
 
   - name: dump
     desc: "fasterq-dump → fastq.gz (03_dump.sbatch)"
+    icon: unpack
     unit: run
     units: {file: $RUNLIST}
     after: [prefetch]
@@ -81,6 +83,7 @@ stages:
 
   - name: qc
     desc: "fastp + host removal (04_qc.sbatch)"
+    icon: sieve
     unit: run
     units: {file: $RUNLIST}
     after: [dump]
@@ -90,6 +93,7 @@ stages:
 
   - name: merge
     desc: "multi-run samples → one R1/R2 (05_merge.sbatch)"
+    icon: funnel
     unit: sample
     units: {file: $MULTI}
     after: [qc]
@@ -99,6 +103,7 @@ stages:
 
   - name: assemble
     desc: "MEGAHIT de novo assembly (06_assemble.sbatch, himem)"
+    icon: build
     unit: sample
     units: {file: $ASMLIST}
     after: [qc, merge]
@@ -108,6 +113,7 @@ stages:
 
   - name: bin
     desc: "MetaBAT2 + SemiBin2 + DAS Tool (07_bin.sbatch)"
+    icon: bins
     unit: sample
     units: {file: $ASMLIST}
     after: [assemble]
@@ -117,6 +123,7 @@ stages:
 
   - name: mag_qc
     desc: "CheckM2 + GUNC + GTDB-Tk r232, all MAGs in one batch (08_mag_qc.sbatch)"
+    icon: inspect
     unit: once
     after: [bin]
     done: {kind: file, path: "$MAG_DIR/mag_quality.tsv"}
@@ -128,6 +135,11 @@ docs:
   drive: null                            # e.g. https://drive.google.com/drive/folders/<id>
   links: []                              # e.g. {name: "metaCRC runbook", url: "https://…", note: "v3"}
 
-milestones: []                           # TODO: {date: 2026-MM-DD, name: ...}
+# Milestones drive the deadline board (D-day vs the probe's ETA for the stages each one needs).
+# Dates are the project's own; fill them in. `stages` = what must be complete for the milestone to count.
+milestones: []
+#  - {name: "QC 완료 (8,420 run)", date: 2026-MM-DD, stages: [prefetch, dump, qc]}
+#  - {name: "조립·비닝 완료",       date: 2026-MM-DD, stages: [merge, assemble, bin]}
+#  - {name: "MAG 카탈로그",          date: 2026-MM-DD, stages: [mag_qc]}
 
 alerts: [job_failed, stage_done, heartbeat_lost_2h]

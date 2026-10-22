@@ -199,18 +199,92 @@ select.btn{padding:4px 6px}
 .pipe .big .bar{grid-column:1/-1;height:12px;margin:4px 0 0;display:flex;border-radius:999px} .pipe .big .bar i{display:block;height:100%}
 .pipe .big .bar .d{background:var(--accent)} .pipe .big .bar .r{background:color-mix(in srgb,var(--accent) 45%,transparent)} .pipe .big .bar .f{background:var(--bad)}
 .pipe .head{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
-.flow{overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px}
-.flow svg{display:block;font-family:var(--font);max-width:100%;height:auto}
-@media (max-width:760px){.flow svg{max-width:none}}
-.flow .box{cursor:pointer} .flow .box rect.bg{fill:var(--paper);stroke:var(--line);stroke-width:1.2}
-.flow .box.sel rect.bg{stroke:var(--ink);stroke-width:1.6} .flow .box.run rect.bg{stroke:var(--accent);stroke-width:1.6}
-.flow .box.bad rect.bg{stroke:var(--bad)} .flow .box.off rect.bg{stroke-dasharray:4 3}
-.flow .box.done rect.bg{fill:color-mix(in srgb,var(--accent) 12%,var(--paper))}
-.flow .fill{fill:color-mix(in srgb,var(--accent) 28%,transparent)} .flow .fillr{fill:color-mix(in srgb,var(--accent) 14%,transparent)} .flow .fillf{fill:color-mix(in srgb,var(--bad) 45%,transparent)}
-.flow text{fill:var(--ink)} .flow .nm{font-weight:700;font-size:12px} .flow .pc{font-family:var(--mono);font-size:17px;font-weight:500} .flow .sm{font-size:10px;fill:var(--muted);font-family:var(--mono)}
-.flow .st{font-size:10px;fill:var(--muted)} .flow .st.run{fill:var(--accent);font-weight:600} .flow .st.bad{fill:var(--bad);font-weight:600}
-.flow .edge{fill:none;stroke:var(--line-strong);stroke-width:1.4} .flow .edge.on{stroke:var(--accent)}
-.flow .box.off text{fill:var(--muted)}
+/* ---- 공장 단면도 (factory cutaway): the pipeline as machines that do what each step does ---- */
+.pipe .lvl{border:2px solid var(--line-strong);border-radius:10px;background:var(--paper);padding:8px 10px 10px;position:relative}
+.pipe .lvl>.fl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pipe .lvl>.fl .r{margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;font-family:var(--mono)}
+/* deadline board */
+.ms{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:center;background:var(--ink);color:var(--paper);border-radius:10px;padding:10px 12px}
+.ms .dday{font-family:var(--mono);font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.ms .dday.late{color:#ff8a7a} .ms .dday.ok{color:#5eead4} .ms .dday.soon{color:#fcd34d}
+.ms .nm{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms .sub{font-size:11px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms .pill2{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.12);white-space:nowrap}
+.ms .pill2.ok{background:rgba(94,234,212,.2);color:#5eead4} .ms .pill2.late{background:rgba(255,138,122,.22);color:#ffb4a8} .ms .pill2.soon{background:rgba(252,211,77,.2);color:#fde68a}
+.ms .bar{grid-column:1/-1;height:6px;background:rgba(255,255,255,.15);border-radius:999px;margin:2px 0 0;overflow:hidden} .ms .bar i{display:block;height:100%;background:#5eead4}
+.ms .more{grid-column:1/-1;display:flex;gap:6px 14px;flex-wrap:wrap;font-size:11px;opacity:.85} .ms .more b{font-family:var(--mono);font-weight:600}
+.ms.none{display:block;font-size:11px;opacity:.9}
+.tl{position:relative;height:34px;margin:4px 2px 0}
+.tl .ax{position:absolute;left:0;right:0;top:14px;height:2px;background:var(--line-strong)}
+.tl .tick{position:absolute;top:9px;width:2px;height:12px;background:var(--line-strong)} .tl .tick.today{background:var(--accent);height:16px;top:7px}
+.tl .lab{position:absolute;top:22px;font-size:9px;color:var(--muted);transform:translateX(-50%);white-space:nowrap;font-family:var(--mono)}
+.tl .flag{position:absolute;top:0;transform:translateX(-50%);font-size:10px;line-height:1;white-space:nowrap} .tl .flag.late{color:var(--bad)} .tl .flag.ok{color:var(--accent)}
+.tl .eta{position:absolute;top:11px;width:8px;height:8px;border-radius:50%;background:var(--warn);transform:translateX(-50%);border:1.5px solid var(--panel)}
+/* production line */
+.line{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+@media (max-width:760px){.line{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mc{position:relative;background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:6px 8px 8px;cursor:pointer;min-width:0;display:flex;flex-direction:column;gap:4px;transition:border-color .2s}
+.mc:hover{border-color:var(--line-strong)} .mc.sel{border-color:var(--ink);box-shadow:0 0 0 2px color-mix(in srgb,var(--ink) 15%,transparent)}
+.mc.run{border-color:var(--accent)} .mc.bad{border-color:var(--bad)} .mc.done{background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.mc.off{background:repeating-linear-gradient(135deg,var(--panel) 0 8px,color-mix(in srgb,var(--line) 55%,var(--panel)) 8px 10px);color:var(--muted)} .mc.off .led{opacity:.5}
+.mc .h{display:flex;align-items:center;gap:6px;min-width:0} .mc .h .no{font-family:var(--mono);font-size:9px;color:var(--muted);flex:none}
+.mc .h .nm{font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .mc .h .kw{font-size:10px;color:var(--muted);flex:none}
+.mc .h .lamp{width:7px;height:7px;border-radius:50%;background:var(--line-strong);flex:none;margin-left:auto} .mc.run .h .lamp{background:var(--live);animation:pulse 1.2s infinite} .mc.bad .h .lamp{background:var(--bad)}
+.mc .led .sl{display:none} .mc .led{font-family:var(--mono);font-size:11px;background:var(--ink);color:#5eead4;border-radius:5px;padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.mc.off .led{color:var(--muted)} .mc.done .led{color:#9ad8ff}
+.mc .gl{height:56px;display:flex;align-items:flex-end;justify-content:center} .mc .gl svg{width:100%;height:56px;max-width:150px}
+.mc .st{font-size:10px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;min-height:14px} .mc .st b{color:var(--ink);font-weight:600} .mc .st .r{color:var(--accent);font-weight:600} .mc .st .f{color:var(--bad);font-weight:600}
+.mc .pb{height:5px;background:var(--paper);border:1px solid var(--line);border-radius:999px;overflow:hidden;display:flex} .mc .pb i{display:block;height:100%} .mc .pb .d{background:var(--accent)} .mc .pb .r{background:color-mix(in srgb,var(--accent) 40%,transparent)} .mc .pb .f{background:var(--bad)}
+.belt{height:8px;margin:2px 4px 0;border-radius:4px;background:repeating-linear-gradient(90deg,var(--line-strong) 0 14px,var(--paper) 14px 24px);background-size:24px 8px;opacity:.8}
+.belt.on{animation:belt 1.4s linear infinite} @keyframes belt{to{background-position:24px 0}}
+.belt-l{font-size:10px;color:var(--muted);text-align:right;font-family:var(--mono);margin-top:3px}
+/* machine glyphs */
+.gl .k{fill:var(--line-strong)} .gl .k2{fill:var(--muted)} .gl .a{fill:var(--accent)} .gl .a2{fill:color-mix(in srgb,var(--accent) 45%,transparent)} .gl .b{fill:var(--bad)} .gl .w{fill:var(--panel)} .gl .o{stroke:var(--line-strong);fill:none;stroke-width:2} .gl .oa{stroke:var(--accent);fill:none;stroke-width:2}
+.gl .brick{fill:#c9a97a} .gl .brick2{fill:#a8875a}
+.mc.run .gl .spin{animation:spin 2s linear infinite;transform-origin:center} @keyframes spin{to{transform:rotate(360deg)}}
+.mc.run .gl .bob{animation:bob 1.6s ease-in-out infinite} @keyframes bob{50%{transform:translateY(-4px)}}
+/* civic floor */
+.civ{display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:760px){.civ{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.cv{background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:6px 8px 8px;cursor:pointer;min-width:0;display:flex;flex-direction:column;gap:4px}
+.cv:hover{border-color:var(--line-strong)}
+.cv .h{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px} .cv .h .bd{margin-left:auto;font-size:10px;color:var(--accent);font-weight:700;white-space:nowrap}
+.cv .scr{background:var(--ink);color:var(--paper);border-radius:6px;padding:6px 8px;font-size:11px;line-height:1.35;min-height:46px;overflow:hidden}
+.cv .scr .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .cv .scr .s{opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.cv .shelf{display:flex;gap:3px;align-items:flex-end;height:46px;padding:0 2px;border-bottom:3px solid var(--line-strong)} .cv .shelf i{display:block;width:9px;border-radius:2px 2px 0 0;background:var(--accent)}
+.cv .frames{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;height:46px} .cv .frames a{display:block;border:2px solid var(--ink);border-radius:3px;background:var(--paper);overflow:hidden;position:relative} .cv .frames a i{position:absolute;inset:3px;border-radius:2px;display:block} .cv .frames a img{position:absolute;inset:3px;width:calc(100% - 6px);height:calc(100% - 6px);object-fit:cover}
+.cv .sub{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:13px}
+@media (max-width:760px){.cv .scr{min-height:40px;font-size:10px} .cv .h{font-size:11px}}
+/* compute hall */
+.hall{display:flex;flex-direction:column;gap:6px}
+.hall .sq{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap} .hall .sq b{color:var(--ink);font-weight:600;font-family:var(--mono)}
+.racks{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.pt{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;max-width:100%} .pt .nodes{display:flex;gap:2px;flex-wrap:wrap;max-width:260px}
+.pt .nd{width:12px;height:20px;border-radius:2px;background:var(--ink);position:relative;overflow:hidden} .pt .nd::after{content:'';position:absolute;left:2px;right:2px;top:3px;bottom:3px;background:repeating-linear-gradient(180deg,var(--muted) 0 2px,transparent 2px 4px);opacity:.35}
+.pt .nd.idle::after{background:repeating-linear-gradient(180deg,var(--live) 0 2px,transparent 2px 4px);opacity:1} .pt .nd.down::after{background:repeating-linear-gradient(180deg,var(--bad) 0 2px,transparent 2px 4px);opacity:.9}
+.pt .pl{font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap} .pt .pl b{color:var(--ink);font-weight:600} .pt.mine .pl{color:var(--ink)} .pt .pl .tag{font-size:8px;padding:0 4px;border-radius:3px;border:1px solid var(--line-strong);margin-left:4px;vertical-align:middle;font-family:var(--font)} .pt.gpu .pl .tag{border-color:var(--warn);color:var(--warn)}
+@media (max-width:760px){.pt .nd{width:9px;height:16px} .racks{gap:8px}}
+.hall .note2{font-size:10px;color:var(--muted)}
+.pt .mini{display:none}
+/* phone: the whole factory in one screen — small machines, chips for nodes, icon tiles upstairs, detail on tap */
+@media (max-width:760px){
+  .pipe .big .pct{font-size:22px} .pipe .big .pct small{font-size:10px;margin-left:5px}
+  .ms{padding:8px 10px;gap:4px 8px} .ms .dday{font-size:20px} .ms .nm{font-size:12px} .ms .sub{font-size:10px} .ms .pill2{font-size:10px;padding:2px 6px} .ms .more{font-size:10px}
+  .pipe .lvl{padding:6px 6px 8px} .pipe .lvl>.fl{margin-bottom:4px} .pipe .lvl>.fl .r{font-size:9px}
+  .line{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  .mc{padding:4px 5px 5px;gap:2px;border-width:1.5px;border-radius:8px} .mc .h{gap:3px} .mc .h .no,.mc .h .kw{display:none} .mc .h .nm{font-size:10px} .mc .h .lamp{width:5px;height:5px}
+  .mc .led{font-size:8.5px;padding:2px 3px;border-radius:4px;letter-spacing:-.2px} .mc .led .u,.mc .led .sp{display:none} .mc .led .sl{display:inline}
+  .mc .gl{height:30px} .mc .gl svg{height:30px} .mc .st{font-size:8.5px;gap:3px;min-height:10px} .mc .pb{height:3px}
+  .belt{height:5px;margin-top:4px} .belt-l{display:none}
+  .pipe .sdetail{display:none;margin-top:6px} .pipe .sdetail.open{display:flex} .sdetail ul{max-height:70px}
+  .hall .sq{font-size:10px;gap:6px}
+  .racks{gap:5px} .pt{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:4px 7px;gap:2px;flex:0 0 auto;max-width:100%} .pt.mine{border-color:var(--line-strong)} .pt .nodes{display:none}
+  .pt .pl{font-size:9.5px} .pt .mini{display:block;height:4px;background:var(--paper);border-radius:2px;overflow:hidden} .pt .mini i{display:block;height:100%;background:var(--live)}
+  .hall .note2{display:none}
+  .civ{gap:5px} .cv{padding:5px 7px;gap:0} .cv .h{font-size:10.5px;gap:4px;flex-wrap:wrap} .cv .h .bd{font-size:9.5px;margin-left:0;width:100%}
+  .cv .scr,.cv .shelf,.cv .frames,.cv .sub{display:none}
+  .tl{display:none}
+}
 .sdetail{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 .sdetail .l1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;color:var(--ink)} .sdetail .l1 b{font-size:13px} .sdetail .l1 small{font-family:var(--mono);color:var(--muted)}
 .sdetail .kv2{display:flex;gap:12px;flex-wrap:wrap} .sdetail .kv2 b{color:var(--ink);font-weight:600}
@@ -281,7 +355,7 @@ select.btn{padding:4px 6px}
       </div>
     </section>
     <section class="card" data-tab="pipe" id="pipe-card" hidden>
-      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
+      <h2>공장 · 공정 <span class="n" id="pp-n"></span></h2>
       <div class="sec pipe" id="pipe"></div>
     </section>
     <section class="card" data-tab="talk" id="talk-card" hidden>
@@ -946,6 +1020,38 @@ function stageInfo(name, plan, run) {
   const state = !planned ? 'off' : complete ? 'done' : running ? 'run' : failed && !done ? 'bad' : blocked ? 'wait' : done ? 'part' : 'idle';
   return {name, ps, st, total, done, failed, running, pending, after, unit: ps.unit || st.unit || '', runner: ps.runner || {}, desc: ps.desc || st.desc || '', complete, blocked, planned, state, site: st.site};
 }
+// ---- machine glyphs: one per plan `icon` key; the picture does what the step does
+const GLYPH = {
+  dock: (i) => `<svg viewBox="0 0 150 56"><rect class="k" x="0" y="44" width="150" height="4"/><path class="k2" d="M8 40 L16 52 L74 52 L82 40 Z"/><rect class="k" x="26" y="28" width="22" height="12"/>
+    ${[0,1,2,3,4,5].map(c => [0,1,2].map(r => `<rect class="${(c*3+r) < Math.round((i.ratio||0)*18) ? 'a' : 'o'}" x="${90+c*9}" y="${34-r*8}" width="8" height="7" rx="1"/>`).join('')).join('')}
+    ${i.failed ? `<rect class="b" x="126" y="4" width="8" height="7" rx="1"/><rect class="b" x="135" y="4" width="8" height="7" rx="1"/>` : ''}<g class="bob"><path class="oa" d="M52 10 h30 M82 10 v12"/><rect class="a" x="78" y="22" width="8" height="6"/></g></svg>`,
+  unpack: (i) => `<svg viewBox="0 0 150 56"><rect class="k" x="10" y="18" width="52" height="34" rx="4"/><rect class="w" x="16" y="24" width="40" height="12" rx="2"/><rect class="a" x="16" y="40" width="${Math.round((i.ratio||0)*40)}" height="6" rx="1"/>
+    ${[0,1,2,3,4,5,6].map(k => `<rect class="${k < Math.round((i.ratio||0)*7) ? 'a' : 'k'}" x="${74+k*10}" y="12" width="3" height="40"/>`).join('')}<circle class="${i.running ? 'a' : 'k'} spin" cx="36" cy="30" r="0"/></svg>`,
+  sieve: (i) => `<svg viewBox="0 0 150 56"><path class="oa" d="M20 8 H130 L110 40 H40 Z"/>${[0,1,2,3,4,5].map(k => `<line class="o" x1="${44+k*12}" y1="16" x2="${48+k*12}" y2="34"/>`).join('')}
+    ${[0,1,2].map(k => `<circle class="b" cx="${60+k*14}" cy="48" r="3"/>`).join('')}<rect class="a" x="${40}" y="42" width="${Math.round((i.ratio||0)*70)}" height="4"/></svg>`,
+  funnel: (i) => `<svg viewBox="0 0 150 56"><path class="oa" d="M30 6 H120 L82 36 H68 Z"/>${[0,1,2].map(k => `<line class="o" x1="${45+k*20}" y1="0" x2="${55+k*20}" y2="12"/>`).join('')}<rect class="${i.done ? 'a' : 'k'}" x="70" y="36" width="10" height="16"/><rect class="a" x="30" y="50" width="${Math.round((i.ratio||0)*90)}" height="4"/></svg>`,
+  build: (i) => { const rows = 4, cols = 8, n = Math.round((i.ratio||0)*rows*cols); let b = ''; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const k = r*cols+c; b += `<rect class="${k < n ? 'brick' : 'o'}" x="${20+c*11+(r%2?5:0)}" y="${44-r*10}" width="10" height="9" rx="1" ${k < n ? '' : 'stroke-dasharray="2 2"'}/>`; }
+    return `<svg viewBox="0 0 150 56">${b}<path class="o" d="M120 52 V10 H100"/><g class="bob"><rect class="brick" x="96" y="12" width="9" height="7"/></g></svg>`; },
+  bins: (i) => `<svg viewBox="0 0 150 56">${['#60a5fa','#f59e0b','#34d399','#f472b6'].map((c, k) => `<rect class="o" x="${14+k*34}" y="22" width="26" height="28" rx="3"/><rect fill="${c}" x="${18+k*34}" y="${50-6-Math.round((i.ratio||0)*18)}" width="18" height="${6+Math.round((i.ratio||0)*18)}" rx="1" opacity="${i.planned ? 1 : .35}"/>`).join('')}</svg>`,
+  inspect: (i) => `<svg viewBox="0 0 150 56"><rect class="o" x="20" y="10" width="60" height="40" rx="4"/><circle class="oa" cx="46" cy="28" r="10"/><line class="oa" x1="53" y1="35" x2="62" y2="44"/><rect class="${i.complete ? 'a' : 'k'}" x="96" y="18" width="30" height="30" rx="3"/><text x="111" y="39" text-anchor="middle" font-size="18" fill="var(--panel)">✓</text></svg>`,
+  machine: (i) => `<svg viewBox="0 0 150 56"><rect class="k" x="20" y="14" width="110" height="38" rx="5"/><rect class="w" x="28" y="22" width="60" height="10" rx="2"/><rect class="a" x="28" y="36" width="${Math.round((i.ratio||0)*94)}" height="8" rx="1"/><circle class="${i.running ? 'a' : 'o'} spin" cx="112" cy="33" r="9"/></svg>`,
+};
+const ICON_KO = {dock: '하역', unpack: '개봉', sieve: '체', funnel: '합류', build: '조립', bins: '분류', inspect: '검수', machine: '공정'};
+const dayMs = 86400e3; const fmtMD = iso => iso ? new Date(iso).toLocaleDateString('ko-KR', {month: 'numeric', day: 'numeric'}) : '';
+/** Milestone → D-day, progress over its stages, ETA from the probe, status (done/ok/soon/late/unknown). */
+function milestoneState(m, info) {
+  const need = (m.stages || []).filter(n => info[n]); const all = need.map(n => info[n]);
+  const total = all.reduce((a, i) => a + (i.total || 0), 0), done = all.reduce((a, i) => a + (i.total ? i.done : 0), 0);
+  const complete = all.length > 0 && all.every(i => i.complete);
+  const etaAt = all.map(i => i.complete ? null : (i.st.eta && i.st.eta.at) || null); const unknown = all.some((i, k) => !i.complete && !etaAt[k]);
+  const eta = unknown ? null : etaAt.filter(Boolean).sort().pop() || null;
+  const date = m.date ? Date.parse(m.date) : NaN; const dday = isNaN(date) ? null : Math.ceil((date - Date.now()) / dayMs);
+  let status = 'unknown', slack = null;
+  if (complete) status = 'done';
+  else if (!isNaN(date) && dday < 0) status = 'late';
+  else if (eta && !isNaN(date)) { slack = Math.round((date - Date.parse(eta)) / dayMs); status = slack < 0 ? 'late' : slack <= 3 ? 'soon' : 'ok'; }
+  return {name: m.name, date: m.date, dday, total, done, ratio: total ? done / total : (complete ? 1 : 0), complete, eta, slack, status, need: need};
+}
 function renderPipeline() {
   const el = $('pipe'); const plan = PP.plan || {stages: []}; const run = PP.run || {stages: {}};
   const order = (plan.stages || []).map(s => s.name); for (const k of Object.keys(run.stages || {})) if (!order.includes(k)) order.push(k);
@@ -955,58 +1061,75 @@ function renderPipeline() {
   const etaMax = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.eta && s.eta.hours) || 0));
   const probedAt = run.probedAt || (sites.map(x => x.probedAt).sort().pop()) || null;
   const pct = roll && roll.total ? Math.round((roll.ratio || 0) * 1000) / 10 : null; const w = v => roll && roll.total ? `${Math.max(0, Math.min(100, v / roll.total * 100))}%` : '0%';
+  const rate = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.rates && (s.rates.per_h_3h || s.rates.per_h_12h)) || 0));
+  // ---- 상황판: overall + deadline board
   let html = `<div class="big"><div class="pct">${pct == null ? '—' : `${pct}%`}<small>${roll && roll.total ? `${roll.done.toLocaleString()} / ${roll.total.toLocaleString()} 완료` : '총량 미정'}</small></div>
-    <div class="sc" style="font-size:11px;color:var(--muted)">${etaMax ? `전체 ETA <b style="color:var(--ink)">${fmtH(etaMax)}</b>` : 'ETA — 측정 전'}</div>
-    <div class="bar"><i class="d" style="width:${w(roll ? roll.done : 0)}"></i><i class="r" style="width:${w(roll ? roll.running : 0)}"></i><i class="f" style="width:${w(roll ? roll.failed : 0)}"></i></div></div>
-    <div class="head">
-    <div><div class="v">${roll ? roll.running : '—'}</div><div class="k">실행 중</div></div>
-    <div><div class="v" style="${roll && roll.failed ? 'color:var(--bad)' : ''}">${roll ? roll.failed : '—'}</div><div class="k">실패</div></div>
-    <div><div class="v">${Object.values(info).filter(i => i.complete).length}/${order.length}</div><div class="k">단계 완료</div></div>
-    <div><div class="v">${canSubmit == null ? '—' : canSubmit ? '여유' : '꽉 참'}</div><div class="k">노드</div></div>
-    <div><div class="v">${probedAt ? fmtRel(probedAt) : '—'}</div><div class="k">프로브</div></div></div>`;
-  // ---- flow diagram: columns by dependency depth, rows for parallel stages
-  const depth = {}; const dep = n => { if (depth[n] != null) return depth[n]; depth[n] = 0; const a = (info[n] || {}).after || []; depth[n] = a.length ? 1 + Math.max(...a.map(x => info[x] ? dep(x) : -1)) : 0; return depth[n]; };
-  order.forEach(dep);
-  const cols = []; for (const n of order) { const d = depth[n]; (cols[d] = cols[d] || []).push(n); }
-  const CW = 126, CH = 92, GX = 30, GY = 16, PAD = 10; const rows = Math.max(1, ...cols.map(c => c.length));
-  const W = PAD * 2 + cols.length * CW + (cols.length - 1) * GX; const H = PAD * 2 + rows * CH + (rows - 1) * GY;
-  const pos = {}; cols.forEach((c, d) => { const off = (rows - c.length) * (CH + GY) / 2; c.forEach((n, i) => { pos[n] = {x: PAD + d * (CW + GX), y: PAD + off + i * (CH + GY)}; }); });
+    <div class="sc" style="font-size:11px;color:var(--muted)">${etaMax ? `전체 ETA <b style="color:var(--ink)">${fmtH(etaMax)}</b>` : 'ETA — 측정 전'}${probedAt ? ` · 프로브 ${fmtRel(probedAt)}` : ''}</div>
+    <div class="bar"><i class="d" style="width:${w(roll ? roll.done : 0)}"></i><i class="r" style="width:${w(roll ? roll.running : 0)}"></i><i class="f" style="width:${w(roll ? roll.failed : 0)}"></i></div></div>`;
+  const ms = (plan.milestones || []).map(m => milestoneState(m, info)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const next = ms.find(m => !m.complete) || ms[ms.length - 1];
+  if (next) {
+    const cls = next.status === 'late' ? 'late' : next.status === 'soon' ? 'soon' : next.status === 'ok' || next.status === 'done' ? 'ok' : '';
+    const pillText = next.status === 'done' ? '✓ 완료' : next.status === 'late' ? (next.dday < 0 ? `지연 ${-next.dday}일` : `늦음 ${-next.slack}일`) : next.status === 'soon' ? `빠듯 (여유 ${next.slack}일)` : next.status === 'ok' ? `여유 ${next.slack}일` : 'ETA 측정 전';
+    html += `<div class="ms"><div class="dday ${cls}">${next.dday == null ? '—' : next.dday >= 0 ? `D-${next.dday}` : `D+${-next.dday}`}</div>
+      <div style="min-width:0"><div class="nm">🏁 ${esc(next.name)}</div><div class="sub">${next.date ? `${esc(next.date)}` : '날짜 없음'} · ${next.need.map(esc).join(' → ')} · 진행 ${Math.round(next.ratio * 100)}%${next.eta ? ` · 예상 완료 ${fmtMD(next.eta)}` : ''}</div></div>
+      <div class="pill2 ${cls}">${pillText}</div><div class="bar"><i style="width:${Math.round(next.ratio * 100)}%"></i></div>
+      ${ms.length > 1 ? `<div class="more">${ms.filter(m => m !== next).map(m => `<span>${m.complete ? '✓' : '🏁'} ${esc(m.name)} <b>${m.dday == null ? '' : m.dday >= 0 ? `D-${m.dday}` : `D+${-m.dday}`}</b>${m.complete ? '' : ` · ${Math.round(m.ratio * 100)}%`}</span>`).join('')}</div>` : ''}</div>`;
+    // timeline strip (wide screens): start → last milestone, today, flags, ETA dots
+    const t0 = Date.parse((plan.dates || {}).start || '') || Math.min(Date.now(), ...ms.map(m => Date.parse(m.date || '') || Date.now())) - 7 * dayMs;
+    const t1 = Math.max(Date.now() + 7 * dayMs, ...ms.map(m => Date.parse(m.date || '') || 0), ...ms.map(m => m.eta ? Date.parse(m.eta) : 0));
+    const XP = t => `${Math.max(0, Math.min(100, (t - t0) / (t1 - t0) * 100))}%`;
+    const xn = XP(Date.now());
+    if (window.innerWidth > 760) html += `<div class="tl"><div class="ax"></div><div class="tick today" style="left:${xn}"></div><div class="lab" style="left:${xn};${parseFloat(xn) < 6 ? 'transform:none' : ''}">오늘</div>
+      ${ms.filter(m => m.date).map(m => { const x = XP(Date.parse(m.date)); const end = parseFloat(x) > 88; return `<div class="tick" style="left:${x}"></div><div class="flag ${m.status === 'late' ? 'late' : m.complete || m.status === 'ok' ? 'ok' : ''}" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${m.complete ? '✓' : '🏁'} ${esc(m.name)}</div><div class="lab" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${fmtMD(m.date)}</div>`; }).join('')}
+      ${ms.filter(m => m.eta && !m.complete).map(m => `<div class="eta" style="left:${XP(Date.parse(m.eta))}" title="${esc(m.name)} 예상 완료 ${fmtMD(m.eta)}"></div>`).join('')}</div>`;
+  } else html += `<div class="ms none">🏁 마일스톤 미설정 — plan.yaml의 <code>milestones</code>에 날짜와 필요한 단계를 적으면 D-day와 ETA 비교가 여기 뜹니다.</div>`;
+  // ---- 2F 생산 라인
   if (!PV.sel || !info[PV.sel]) PV.sel = order.find(n => info[n].state === 'run') || order.find(n => info[n].planned && !info[n].complete) || order[0];
-  let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="공정도">`;
-  for (const n of order) for (const a of info[n].after) { if (!pos[a]) continue; const p1 = pos[a], p2 = pos[n]; const x1 = p1.x + CW, y1 = p1.y + CH / 2, x2 = p2.x, y2 = p2.y + CH / 2; const mx = (x1 + x2) / 2;
-    svg += `<path class="edge ${info[a].complete ? 'on' : ''}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`; }
-  for (const n of order) { const i = info[n]; const q = pos[n]; const r = i.total ? Math.min(1, i.done / i.total) : 0; const rr = i.total ? Math.min(1 - r, i.running / i.total) : 0; const rf = i.total ? Math.min(1 - r - rr, i.failed / i.total) : 0;
-    const inner = CH - 2; const hFill = Math.round(inner * r), hRun = Math.round(inner * rr), hF = Math.round(inner * rf);
-    const status = i.state === 'off' ? '미계획' : i.complete ? '완료 ✓' : i.running ? `▶ ${i.running} 실행${i.failed ? ` · ✕ ${i.failed}` : ''}` : i.failed ? `✕ ${i.failed} 실패` : i.blocked ? '앞 단계 대기' : (i.st.eta ? `ETA ${fmtH(i.st.eta.hours)}` : i.done ? '진행 중' : '대기');
+  html += `<div class="lvl"><div class="fl">2F 생산 라인 <span class="r">${roll ? `▶ ${roll.running} 실행 · ✕ ${roll.failed} 실패 · ${Object.values(info).filter(i => i.complete).length}/${order.length} 단계 완료` : ''}</span></div><div class="line">`;
+  order.forEach((n, k) => { const i = info[n]; const ratio = i.total ? Math.min(1, i.done / i.total) : 0; const g = GLYPH[i.ps.icon] || GLYPH.machine; const kw = ICON_KO[i.ps.icon] || '';
     const cls = i.state === 'off' ? 'off' : i.state === 'done' ? 'done' : i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : '';
-    svg += `<g class="box ${cls} ${PV.sel === n ? 'sel' : ''}" data-n="${esc(n)}" tabindex="0" transform="translate(${q.x},${q.y})">
-      <rect class="bg" x="0" y="0" width="${CW}" height="${CH}" rx="10"/>
-      <clipPath id="c-${esc(n)}"><rect x="1" y="1" width="${CW - 2}" height="${CH - 2}" rx="9"/></clipPath>
-      <g clip-path="url(#c-${esc(n)})"><rect class="fill" x="1" y="${1 + inner - hFill}" width="${CW - 2}" height="${hFill}"/><rect class="fillr" x="1" y="${1 + inner - hFill - hRun}" width="${CW - 2}" height="${hRun}"/><rect class="fillf" x="1" y="${1 + inner - hFill - hRun - hF}" width="${CW - 2}" height="${hF}"/></g>
-      <text class="nm" x="10" y="19">${esc(n)}</text>${i.site && sites.length > 1 ? `<text class="sm" x="${CW - 8}" y="19" text-anchor="end">@${esc(i.site)}</text>` : ''}
-      <text class="pc" x="10" y="48">${i.total ? `${Math.round(r * 100)}%` : (i.done ? i.done : '—')}</text>
-      <text class="sm" x="10" y="63">${i.total ? `${i.done.toLocaleString()} / ${i.total.toLocaleString()} ${esc(i.unit)}` : (i.st.note ? '목록 없음' : esc(i.unit))}</text>
-      <text class="st ${i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : ''}" x="10" y="${CH - 11}">${esc(status)}</text></g>`; }
-  svg += '</svg>';
-  html += `<div class="flow">${svg}</div><div class="sdetail" id="sdetail"></div>`;
+    const status = i.state === 'off' ? `<span>미계획${i.st.note ? ` · ${esc(i.st.note.replace(/^unit list missing: /, '목록 없음: '))}` : ''}</span>` : i.complete ? '<span class="r">완료 ✓</span>' :
+      `${i.running ? `<span class="r">▶ ${i.running} 실행</span>` : ''}${i.pending ? `<span>⏳ ${i.pending}</span>` : ''}${i.failed ? `<span class="f">✕ ${i.failed}</span>` : ''}${i.st.eta ? `<span>ETA <b>${fmtH(i.st.eta.hours)}</b></span>` : (i.blocked ? '<span>앞 단계 대기</span>' : (!i.running && !i.done ? '<span>대기</span>' : ''))}`;
+    html += `<div class="mc ${cls} ${PV.sel === n ? 'sel' : ''}" data-n="${esc(n)}" tabindex="0" title="${esc(i.desc)}"><div class="h"><span class="no">${k + 1}</span><span class="nm">${esc(n)}</span>${kw ? `<span class="kw">· ${kw}</span>` : ''}<span class="lamp"></span></div>
+      <div class="led">${i.total != null ? `${i.done.toLocaleString()}<span class="sp"> / </span><span class="sl">/</span>${i.total.toLocaleString()} <span class="u">${esc(i.unit)}</span>` : (i.done ? `${i.done} <span class="u">${esc(i.unit)}</span>` : '— / —')}</div>
+      <div class="gl">${g({...i, ratio})}</div><div class="st">${status}</div>
+      <div class="pb"><i class="d" style="width:${ratio * 100}%"></i><i class="r" style="width:${i.total ? Math.min(100 - ratio * 100, i.running / i.total * 100) : 0}%"></i><i class="f" style="width:${i.total ? Math.min(100 - ratio * 100, i.failed / i.total * 100) : 0}%"></i></div></div>`; });
+  html += `</div><div class="belt ${roll && roll.running ? 'on' : ''}"></div><div class="belt-l">${rate ? `벨트 ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} /h →` : '벨트 정지'}</div><div class="sdetail" id="sdetail"></div></div>`;
+  // ---- 1F 계산실
   const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo));
-  for (const r of runsWithCluster) { const sq = r.cluster.squeue, si = r.cluster.sinfo;
-    html += `<div class="cluster"><div class="row"><span>${esc(r.site || r.id)} · Slurm ${esc((sq && sq.user) || '')}</span><b>${sq ? `${(sq.byState || {}).RUNNING || 0} 실행 · ${(sq.byState || {}).PENDING || 0} 대기` : ''}</b></div>`;
-    if (sq && Object.keys(sq.pendingReasons || {}).length) html += `<div class="row"><span>대기 사유</span><b>${Object.entries(sq.pendingReasons).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</b></div>`;
-    const parts = Object.entries((si && si.partitions) || {}); if (parts.length) html += `<div class="row"><span>파티션 idle</span><b>${parts.map(([pn, p]) => `${esc(pn)} ${p.idle}/${p.total}`).join(' · ')}</b></div>`;
-    html += `</div>`; }
+  if (runsWithCluster.length) {
+    html += `<div class="lvl"><div class="fl">1F 계산실 <span class="r">${canSubmit == null ? '' : canSubmit ? '노드 여유' : '노드 꽉 참'}</span></div><div class="hall">`;
+    for (const r of runsWithCluster) { const sq = r.cluster.squeue, si = r.cluster.sinfo;
+      html += `<div class="sq"><span>${esc(r.site || r.id)}${sq && sq.user ? ` · Slurm ${esc(sq.user)}` : ''}</span>${sq ? `<span>▶ <b>${(sq.byState || {}).RUNNING || 0}</b> 실행</span><span>⏳ <b>${(sq.byState || {}).PENDING || 0}</b> 대기</span>` : ''}${sq && Object.keys(sq.pendingReasons || {}).length ? `<span>사유: ${Object.entries(sq.pendingReasons).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</span>` : ''}</div>`;
+      const parts = Object.entries((si && si.partitions) || {}).sort((a, b) => (b[1].mine ? 1 : 0) - (a[1].mine ? 1 : 0) || (a[1].gpu ? 1 : 0) - (b[1].gpu ? 1 : 0) || a[0].localeCompare(b[0]));
+      if (parts.length) html += `<div class="racks">${parts.map(([pn, p]) => { const idle = p.idle || 0, down = p.down || 0, tot = p.total || 0; let nodes = ''; for (let q = 0; q < Math.min(tot, 40); q++) nodes += `<span class="nd ${q < idle ? 'idle' : q >= tot - down ? 'down' : ''}"></span>`;
+        return `<div class="pt ${p.mine ? 'mine' : ''} ${p.gpu ? 'gpu' : ''}"><div class="nodes">${nodes}${tot > 40 ? `<span class="pl">+${tot - 40}</span>` : ''}</div><div class="pl">${p.mine ? '★ ' : ''}${esc(pn)} <b>${idle}</b>/${tot}${p.gpu ? '<span class="tag">GPU</span>' : ''}${p.mine && !p.gpu ? '<span class="tag">CPU</span>' : ''}</div><div class="mini"><i style="width:${tot ? idle / tot * 100 : 0}%"></i></div></div>`; }).join('')}</div>`; }
+    html += `<div class="note2">초록 = 지금 비어 있는 노드 · 어두움 = 다른 작업이 사용 중 · 빨강 = down · ★ = 이 프로젝트가 쓰는 파티션</div></div></div>`;
+  }
+  // ---- 3F 관제실 · 서고 · 갤러리 (worker mode only — needs the floor's discussions/docs)
+  if (MODE === 'worker' && WK.user) {
+    const L = T.list || {discussions: []}; const dl = L.discussions || []; const newD = dl.filter(d => Date.now() - Date.parse(d.updatedAt || 0) < dayMs).length;
+    const X2 = X.data || {}; const gfiles = (X2.files || []); const dfiles = (X2.driveFiles || []).filter(f => !f.dir); const allFiles = [...dfiles.map(f => ({name: f.path, at: f.modifiedAt, url: f.url, by: f.by})), ...gfiles.map(f => ({name: f.name, at: f.updatedAt, url: f.url, by: f.by}))].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+    const pics = allFiles.filter(f => /\.(png|jpe?g|svg|gif|webp|pdf)$/i.test(f.name)).slice(0, 6); const newF = allFiles.filter(f => f.at && Date.now() - Date.parse(f.at) < dayMs).length;
+    const hue = str => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+    html += `<div class="lvl"><div class="fl">3F 관제실 · 서고 · 갤러리</div><div class="civ">
+      <div class="cv" data-go="talk"><div class="h">💬 관제실 · 회의<span class="bd">${newD ? `새 글 ${newD}` : (dl.length ? `${dl.length}개` : '')}</span></div><div class="scr">${dl.length ? dl.slice(0, 2).map((d, k) => `<div class="${k ? 's' : 't'}">${esc(d.title)}${k === 0 && d.author ? ` <span style="opacity:.6;font-weight:400">· ${esc(d.author.login)} · ${fmtRel(d.updatedAt)}</span>` : ''}</div>`).join('') : '<div class="s">아직 글이 없습니다 — "새 글"로 시작</div>'}</div></div>
+      <div class="cv" data-go="docs"><div class="h">📎 서고 · 자료<span class="bd">${newF ? `새 자료 ${newF}` : (allFiles.length ? `${allFiles.length}개` : '')}</span></div><div class="shelf">${allFiles.slice(0, 14).map(f => `<i style="height:${18 + (hue(f.name) % 24)}px;background:hsl(${hue(f.name)} 45% 55%)" title="${esc(f.name)}"></i>`).join('') || '<i style="height:6px;background:var(--line)"></i>'}</div><div class="sub">${allFiles[0] ? `${esc(allFiles[0].name)} · ${fmtRel(allFiles[0].at)}` : (X2.drive ? 'Drive 폴더 연결됨' : '자료 없음')}</div></div>
+      <div class="cv" data-go="docs"><div class="h">🖼 갤러리<span class="bd">${pics.length ? `${pics.length}장` : ''}</span></div><div class="frames">${pics.map(f => `<a href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.name)}"><i style="background:linear-gradient(135deg,hsl(${hue(f.name)} 50% 70%),hsl(${(hue(f.name) + 40) % 360} 50% 45%))"></i></a>`).join('') || '<a><i style="background:var(--paper)"></i></a>'}</div><div class="sub">${pics[0] ? esc(pics[0].name) : '그림·PDF가 올라오면 액자에 걸립니다'}</div></div></div></div>`;
+  }
   const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
-  if ((plan.milestones || []).length) html += `<div class="cluster">${plan.milestones.map(m => `<div class="row"><span>🏁 ${esc(m.name)}</span><b>${esc(m.date)}</b></div>`).join('')}</div>`;
   el.innerHTML = html;
-  const detail = () => { const i = info[PV.sel]; if (!i) { $('sdetail').hidden = true; return; } $('sdetail').hidden = false; const st = i.st; const rn = i.runner;
+  const detail = () => { const i = info[PV.sel]; const box = $('sdetail'); if (!i || !box) return; const st = i.st; const rn = i.runner;
     const failedJobs = (PP.runs || []).flatMap(r => Object.entries(r.jobs || {}).filter(([k, j]) => j.stage === i.name && j.status === 'failed').map(([k, j]) => `${k.split(':').slice(1).join(':')} ${j.msg || ''}`));
-    $('sdetail').innerHTML = `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
+    box.innerHTML = `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
       <div class="kv2">${i.total != null ? `<span>완료 <b>${i.done.toLocaleString()}</b> / ${i.total.toLocaleString()} ${esc(i.unit)}</span>` : ''}${i.running ? `<span>실행 <b>${i.running}</b></span>` : ''}${i.pending ? `<span>대기 <b>${i.pending}</b></span>` : ''}${i.failed ? `<span style="color:var(--bad)">실패 <b>${i.failed}</b></span>` : ''}
         ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h (12h)</span>` : ''}${st.rates && st.rates.per_h_3h ? `<span><b>${st.rates.per_h_3h >= 10 ? Math.round(st.rates.per_h_3h) : st.rates.per_h_3h.toFixed(1)}</b>/h (3h)</span>` : ''}
         ${st.eta ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : '')}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
       ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; };
   detail();
-  el.querySelectorAll('.flow .box').forEach(g => { const go = () => { PV.sel = g.dataset.n; el.querySelectorAll('.flow .box').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+  el.querySelectorAll('.mc').forEach(g => { const go = () => { const box = $('sdetail'); if (PV.sel === g.dataset.n && box) box.classList.toggle('open'); else if (box) box.classList.add('open'); PV.sel = g.dataset.n; el.querySelectorAll('.mc').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+  el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && getComputedStyle(b).display !== 'none') b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) card.scrollIntoView({behavior: 'smooth', block: 'start'}); } }; });
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }
 
@@ -1021,7 +1144,7 @@ async function loadDocs(refresh) {
   if (MODE !== 'worker' || !WK.user || !S.project) { card.hidden = true; return; }
   card.hidden = false;
   try { X.data = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/docs${refresh ? '?refresh=1' : ''}`); } catch (e) { X.data = {error: e.message}; }
-  renderDocs();
+  renderDocs(); if (!$('pipe-card').hidden) renderPipeline();
 }
 function renderDocs() {
   const el = $('docs'); const d = X.data;
@@ -1059,6 +1182,7 @@ async function loadTalk(silent) {
   catch (e) { T.list = {error: e.message, discussions: []}; }
   T.categories = (T.list && T.list.categories) || []; T.url = T.list && T.list.url;
   if (T.mode === 'list' || !silent) renderTalk();
+  if (!$('pipe-card').hidden) renderPipeline();
 }
 function renderTalk() {
   const el = $('talk'); const L = T.list || {discussions: []};

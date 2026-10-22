@@ -758,19 +758,21 @@ def read_sinfo(partitions: list[str] | None) -> dict[str, Any] | None:
     out = _run(["sinfo", "-h", "-o", "%P|%a|%l|%D|%T"])
     if out is None:
         return None
+    # Every partition is reported (the compute hall shows CPU and GPU racks alike); the plan's own
+    # partitions are flagged `mine` and are what canSubmit is judged on.
     parts: dict[str, dict[str, Any]] = {}
     for l in out.splitlines():
         f = l.split("|")
         if len(f) < 5:
             continue
         name = f[0].rstrip("*")
-        if partitions and name not in partitions:
-            continue
-        p = parts.setdefault(name, {"avail": f[1], "timelimit": f[2], "nodes": {}, "total": 0})
+        p = parts.setdefault(name, {"avail": f[1], "timelimit": f[2], "nodes": {}, "total": 0,
+                                    "mine": (not partitions) or name in partitions, "gpu": "gpu" in name.lower()})
         n = int(f[3] or 0); st = f[4]
         p["nodes"][st] = p["nodes"].get(st, 0) + n; p["total"] += n
     for p in parts.values():
         p["idle"] = p["nodes"].get("idle", 0); p["alloc"] = p["nodes"].get("alloc", 0) + p["nodes"].get("mix", 0)
+        p["down"] = sum(v for k, v in p["nodes"].items() if k.rstrip("*~#!%$@^-") in ("down", "drain", "drng", "fail", "maint", "inval", "unk", "unknown"))
     return {"partitions": parts, "at": iso(time.time())}
 
 
@@ -871,7 +873,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
         for s in stages.values():
             s.pop("_job", None)
     report["cluster"] = {"squeue": sq, "sinfo": si,
-                         "canSubmit": (any(p["idle"] > 0 for p in si["partitions"].values()) if si and si["partitions"] else None)}
+                         "canSubmit": (any(p["idle"] > 0 for p in si["partitions"].values() if p.get("mine")) if si and si["partitions"] else None)}
 
     # 4) roll-up
     tot = sum(s["total"] for s in stages.values() if s.get("total")); dn = sum(s["done"] for s in stages.values() if s.get("total"))

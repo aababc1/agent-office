@@ -297,7 +297,8 @@ def test_probe_reads_markers_trace_and_slurm(tmp_path, monkeypatch):
     assert st["profile"]["taskS"]["p50"] >= 40 * 60
     assert rep["unplanned"] == {"QC": {"done": 1, "failed": 0, "running": 0, "lastAt": None, "taskS": None}}
     assert rep["nextflow"]["log"]["errors"] == 1 and rep["nextflow"]["log"]["submitted"] == 1
-    cl = rep["cluster"]; assert cl["canSubmit"] is True and cl["sinfo"]["partitions"]["cpu64-only"]["idle"] == 5 and "1gpu" not in cl["sinfo"]["partitions"]
+    cl = rep["cluster"]; assert cl["canSubmit"] is True and cl["sinfo"]["partitions"]["cpu64-only"]["idle"] == 5
+    assert cl["sinfo"]["partitions"]["1gpu"]["gpu"] is True and cl["sinfo"]["partitions"]["1gpu"]["mine"] is False and cl["sinfo"]["partitions"]["cpu64-only"]["mine"] is True
     assert cl["squeue"]["pendingReasons"] == {"Priority": 1, "Resources": 1}
     state = to_pipeline_state(rep, "test")
     assert state["rollup"]["running"] == 3 and state["counters"]["failed"] == 3 and "dump:ERR000020" in state["jobs"] and "PROFILE:S9" in state["jobs"]
