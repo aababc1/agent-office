@@ -98,6 +98,22 @@ curl -X POST https://agent-office.<계정>.workers.dev/ingest/events \
     계산 서버 프로젝트는 `plan.yaml`의 `docs:` 블록이 같은 역할을 한다(프로브가 plan과 함께 보낸다). Drive 폴더의 공유 범위는 Drive에서 따로 관리한다 — 버튼은 링크를 열 뿐이다.
   - 이미 `docs/`에 파일이 있던 repo는 `/api/admin/resync?repo=<owner/repo>` 한 번으로 목록을 채운다.
 
+### Google Drive 폴더 안까지 보이게 (서비스 계정, 한 번만)
+
+버튼만으로도 쓸 수 있지만, 키 하나를 넣으면 자료실 카드에 **Drive 폴더의 파일 목록**(이름·수정한 사람·시각·크기, 하위 폴더 한 단계)이 뜨고 📎 새 자료 배지에도 반영된다. 읽기 전용이다 — Worker는 목록만 읽고, 파일을 여는 건 각자의 Google 권한, 올리는 건 Drive 앱.
+
+1. https://console.cloud.google.com → 상단 프로젝트 선택 → **새 프로젝트** (이름 `agent-office`) → 만들기, 그 프로젝트를 선택
+2. 왼쪽 메뉴 **API 및 서비스 → 라이브러리** → "Google Drive API" 검색 → **사용**
+3. **IAM 및 관리자 → 서비스 계정 → + 서비스 계정 만들기** → 이름 `agent-office-reader` → 만들고 계속 → (역할은 비워 두고) **완료**
+4. 방금 만든 계정 클릭 → **키** 탭 → **키 추가 → 새 키 만들기 → JSON** → 다운로드된 `.json` 파일을 열어 내용 전체 복사
+5. Cloudflare → Workers & Pages → `agent-office` → **Settings → Variables and Secrets → Add** → 이름 `GDRIVE_SA_KEY`, 타입 **Secret**, 값 = JSON 전체 붙여넣기 → Deploy
+6. Google Drive에서 프로젝트 폴더 → **공유** → 서비스 계정 이메일(`agent-office-reader@<프로젝트>.iam.gserviceaccount.com`, JSON의 `client_email`)을 **뷰어**로 추가. 알림 메일은 꺼도 된다
+7. 폴더 URL을 그 층의 `office.json`(`docs.drive`) 또는 `plan.yaml`의 `docs.drive`에 적는다
+
+확인: `/api/admin/diag`에 `drive: service account key`와 `drive: list <project>'s folder`가 `ok: true`로 나오면 된다. 목록은 2분 캐시(카드의 ↻로 즉시 갱신). 공유 드라이브(Shared Drive) 안의 폴더도 같은 방법으로 된다 — 공유 드라이브 멤버에 서비스 계정을 뷰어로 추가.
+
+키를 바꾸거나 폐기하려면 GCP 서비스 계정의 키 탭에서 삭제하고 새로 만들어 5번만 다시 한다.
+
 스키마는 Worker가 첫 요청에서 스스로 맞춘다(`src/schema.js`: 없는 테이블·컬럼만 추가). D1 콘솔에서 ALTER를 칠 필요가 없다.
 
 ## 로컬에서 돌려보기

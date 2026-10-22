@@ -1,5 +1,6 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, unauthorized } from "./auth.js";
+import { driveEnabled, driveListing } from "./gdrive.js";
 import { json } from "./util.js";
 import * as disc from "./discussions.js";
 
@@ -8,7 +9,7 @@ const withCookie = (res, setCookie) => { if (!setCookie) return res; const r = n
 export async function me(request, env) {
   const { session, setCookie } = await getSession(request, env);
   if (!session) return withCookie(unauthorized(), setCookie);
-  return withCookie(json({ login: session.login, avatar: session.avatar }), setCookie);
+  return withCookie(json({ login: session.login, avatar: session.avatar, admin: session.login === env.ADMIN_LOGIN }), setCookie);
 }
 
 /** One project may have a probe per site (local, kbds, …). Merge their latest stage reports into one picture. */
@@ -34,7 +35,7 @@ export async function mergedPipeline(env, name) {
 export async function floors(request, env) {
   const { session, setCookie } = await getSession(request, env);
   if (!session) return withCookie(unauthorized(), setCookie);
-  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json, discussion_at, discussion_last, docs_json, (plan_json IS NOT NULL) AS has_plan FROM projects ORDER BY last_at DESC").all()).results || [];
+  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json, discussion_at, discussion_last, docs_json, drive_json, (plan_json IS NOT NULL) AS has_plan FROM projects ORDER BY last_at DESC").all()).results || [];
   const docsAt = {}; for (const d of (await env.DB.prepare("SELECT project, MAX(updated_at) AS at, COUNT(*) AS n FROM docs GROUP BY project").all()).results || []) docsAt[d.project] = { at: d.at, n: d.n };
   const out = [];
   for (const r of rows) {
@@ -46,7 +47,7 @@ export async function floors(request, env) {
                sessions: (s.sessions || {}).total || 0, active: (s.sessions || {}).active || 0,
                latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: pipe ? { run: pipe.run, status: pipe.status, lastAt: pipe.lastAt, done: pipe.done, total: pipe.total, ratio: pipe.ratio, running: pipe.running, failed: pipe.failed, etaHours: pipe.etaHours, sites: pipe.sites } : (s.pipeline || null),
                discussionAt: r.discussion_at || null, discussionLast: r.discussion_last ? JSON.parse(r.discussion_last) : null, hasPlan: !!r.has_plan,
-               docsAt: (docsAt[r.name] || {}).at || null, docsN: (docsAt[r.name] || {}).n || 0, hasDrive: !!(r.docs_json && (JSON.parse(r.docs_json) || {}).drive) });
+               ...docsBadge(r, docsAt[r.name]) });
   }
   return withCookie(json({ floors: out }), setCookie);
 }
@@ -87,16 +88,26 @@ export async function ws(request, env, name) {
   return stub.fetch(request);
 }
 
-// ---- 자료실: docs/** of the data repo (tracked from pushes) + a Drive folder / pinned links from office.json or plan.docs
+/** docsAt/docsN for the floor guide: newest of GitHub docs/ and the cached Drive listing. */
+function docsBadge(r, gh) {
+  let at = (gh || {}).at || null, n = (gh || {}).n || 0, hasDrive = false;
+  try { hasDrive = !!(r.docs_json && (JSON.parse(r.docs_json) || {}).drive); } catch { /* bad json */ }
+  try { const d = r.drive_json ? JSON.parse(r.drive_json) : null; if (d && Array.isArray(d.files)) { const files = d.files.filter(f => !f.dir); n += files.length; const m = files.map(f => f.modifiedAt || "").sort().pop(); if (m && (!at || m > at)) at = m; } } catch { /* bad json */ }
+  return { docsAt: at, docsN: n, hasDrive };
+}
+
+// ---- 자료실: docs/** of the data repo (tracked from pushes) + a Drive folder (service-account listing) / pinned links from office.json or plan.docs
 export async function docs(request, env, name) {
   const g = await gate(request, env, name); if (g.deny) return g.deny;
   const row = await env.DB.prepare("SELECT docs_json FROM projects WHERE name=?").bind(name).first();
   let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
   const repo = g.project.repo; const branch = cfg.branch || "main";
+  const drive = cfg.drive ? await driveListing(env, name, cfg.drive, { force: new URL(request.url).searchParams.has("refresh") }) : null;
   const files = ((await env.DB.prepare("SELECT path, size, by, sha, updated_at FROM docs WHERE project=? ORDER BY updated_at DESC, path").bind(name).all()).results || [])
     .map(d => ({ path: d.path, name: d.path.replace(/^docs\//, ""), size: d.size, by: d.by, updatedAt: d.updated_at,
                  url: repo ? `https://github.com/${repo}/blob/${encodeURIComponent(branch)}/${d.path.split("/").map(encodeURIComponent).join("/")}` : null }));
-  return withCookie(json({ drive: cfg.drive || null, links: Array.isArray(cfg.links) ? cfg.links : [], branch, repo,
+  return withCookie(json({ drive: cfg.drive || null, driveEnabled: driveEnabled(env), driveFiles: drive ? drive.files : [], driveAt: drive ? drive.at : null, driveError: drive ? drive.error : null,
+                           links: Array.isArray(cfg.links) ? cfg.links : [], branch, repo,
                            uploadUrl: repo ? `https://github.com/${repo}/upload/${encodeURIComponent(branch)}/docs` : null,
                            folderUrl: repo ? `https://github.com/${repo}/tree/${encodeURIComponent(branch)}/docs` : null, files }), g.setCookie);
 }

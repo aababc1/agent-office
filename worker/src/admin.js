@@ -3,6 +3,7 @@ import { getSession } from "./auth.js";
 import { appJwt, installationToken, rawFile, repoBlobs } from "./github.js";
 import { applyDocs, processRepoPush } from "./ingest.js";
 import { json } from "./util.js";
+import { folderIdOf, listFolder, serviceAccount } from "./gdrive.js";
 
 async function admin(request, env) {
   const { session } = await getSession(request, env);
@@ -15,7 +16,7 @@ export async function diag(request, env) {
   const g = await admin(request, env); if (g.deny) return g.deny;
   const repo = new URL(request.url).searchParams.get("repo") || `${env.GH_OWNER}/agent-office-data`;
   const out = { repo, secrets: {}, steps: [] };
-  for (const k of ["GH_CLIENT_ID", "GH_CLIENT_SECRET", "GH_APP_ID", "GH_APP_PRIVATE_KEY", "GH_WEBHOOK_SECRET", "SESSION_SECRET", "PROJECT_TOKENS"]) {
+  for (const k of ["GH_CLIENT_ID", "GH_CLIENT_SECRET", "GH_APP_ID", "GH_APP_PRIVATE_KEY", "GH_WEBHOOK_SECRET", "SESSION_SECRET", "PROJECT_TOKENS", "GDRIVE_SA_KEY"]) {
     const v = env[k]; out.secrets[k] = v ? (k === "GH_APP_PRIVATE_KEY" ? `set (${v.length} chars, ${/BEGIN/.test(v) ? "PEM" : "not PEM?"}, ${/\\n/.test(v) ? "has literal \\n" : "ok"})` : `set (${String(v).length} chars)`) : "MISSING";
   }
   const step = async (name, fn) => { try { const r = await fn(); out.steps.push({ step: name, ok: true, info: r }); return r; } catch (e) { out.steps.push({ step: name, ok: false, error: e.message }); throw e; } };
@@ -27,6 +28,17 @@ export async function diag(request, env) {
     const rows = (await env.DB.prepare("SELECT name, repo, last_at FROM projects").all()).results || [];
     out.d1 = { projects: rows, sessions: (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, events: (await env.DB.prepare("SELECT COUNT(*) AS n FROM events").first()).n };
   } catch (e) { /* steps carry the failure */ }
+  // Google Drive (optional): key parses → token → the first configured folder lists
+  if (env.GDRIVE_SA_KEY) {
+    try {
+      const email = await step("drive: service account key", async () => serviceAccount(env).client_email);   // never echo the key itself
+      out.drive = { serviceAccount: email, hint: "share each project's Drive folder with this e-mail (viewer)" };
+      const rows = (await env.DB.prepare("SELECT name, docs_json FROM projects WHERE docs_json IS NOT NULL").all()).results || [];
+      const withDrive = rows.map(r => { try { return { name: r.name, drive: JSON.parse(r.docs_json).drive }; } catch { return null; } }).filter(x => x && x.drive);
+      if (!withDrive.length) out.steps.push({ step: "drive: a project with docs.drive", ok: false, error: "no project has a drive folder yet (office.json or plan.yaml docs.drive)" });
+      else await step(`drive: list ${withDrive[0].name}'s folder`, async () => { const l = await listFolder(env, folderIdOf(withDrive[0].drive), { depth: 0, max: 5 }); return `${l.length} entries (first page)`; });
+    } catch (e) { /* steps carry the failure */ }
+  } else out.steps.push({ step: "drive", ok: false, error: "GDRIVE_SA_KEY not set (optional: Drive listing in the 자료실 card)" });
   return json(out);
 }
 

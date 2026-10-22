@@ -6,6 +6,7 @@ const STEPS = [
   `CREATE TABLE IF NOT EXISTS docs (project TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, by TEXT, sha TEXT, updated_at TEXT, PRIMARY KEY (project, path))`,
   `ALTER TABLE projects ADD COLUMN plan_json TEXT`,
   `ALTER TABLE projects ADD COLUMN docs_json TEXT`,
+  `ALTER TABLE projects ADD COLUMN drive_json TEXT`,
   `ALTER TABLE projects ADD COLUMN discussion_at TEXT`,
   `ALTER TABLE projects ADD COLUMN discussion_last TEXT`,
 ];

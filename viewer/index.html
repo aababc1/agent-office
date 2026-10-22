@@ -234,6 +234,7 @@ select.btn{padding:4px 6px}
 .xitem{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;text-decoration:none;color:inherit;border:1px solid transparent}
 .xitem:hover{background:var(--paper);border-color:var(--line)}
 .xitem .xi{font-size:15px;text-align:center}
+.xitem .xm{display:flex;flex-direction:column;min-width:0}
 .xitem .xt{font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xitem .xs{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xitem .xw{font-size:10px;color:var(--muted);white-space:nowrap;font-family:var(--mono)}
@@ -1014,24 +1015,33 @@ const X = {data: null, seenAt: 0};
 const fileIcon = n => { const e = (n.split('.').pop() || '').toLowerCase();
   return ({pdf: '📕', doc: '📝', docx: '📝', md: '📝', txt: '📝', xls: '📊', xlsx: '📊', csv: '📊', tsv: '📊', ppt: '📽', pptx: '📽', png: '🖼', jpg: '🖼', jpeg: '🖼', svg: '🖼', zip: '🗜', gz: '🗜', tar: '🗜', fa: '🧬', fasta: '🧬', fastq: '🧬', ipynb: '📓', py: '⚙️', sh: '⚙️', r: '⚙️'})[e] || '📄'; };
 const fmtSize = b => b == null ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : b < 1073741824 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1073741824).toFixed(2)} GB`;
-async function loadDocs() {
+const driveIcon = f => f.dir ? '📁' : ({'application/vnd.google-apps.document': '📝', 'application/vnd.google-apps.spreadsheet': '📊', 'application/vnd.google-apps.presentation': '📽', 'application/vnd.google-apps.form': '📋', 'application/vnd.google-apps.drawing': '🖍', 'application/pdf': '📕'})[f.mime] || (/^image\//.test(f.mime || '') ? '🖼' : /^video\//.test(f.mime || '') ? '🎞' : fileIcon(f.name));
+async function loadDocs(refresh) {
   const card = $('docs-card'); X.data = null;
   if (MODE !== 'worker' || !WK.user || !S.project) { card.hidden = true; return; }
   card.hidden = false;
-  try { X.data = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/docs`); } catch (e) { X.data = {error: e.message}; }
+  try { X.data = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/docs${refresh ? '?refresh=1' : ''}`); } catch (e) { X.data = {error: e.message}; }
   renderDocs();
 }
 function renderDocs() {
   const el = $('docs'); const d = X.data;
   if (!d) { el.innerHTML = '<div class="note">불러오는 중…</div>'; return; }
   if (d.error) { el.innerHTML = `<div class="note">자료실을 불러오지 못했습니다: ${esc(d.error)}</div>`; return; }
-  const files = d.files || []; $('x-n').textContent = files.length ? `${files.length}개` : '';
-  const dayAgo = Date.now() - 86400e3;
-  let html = `<div class="row">${d.drive ? `<a class="btn drive" href="${esc(d.drive)}" target="_blank" rel="noopener">📁 Drive 폴더</a>` : ''}${d.uploadUrl ? `<a class="btn" href="${esc(d.uploadUrl)}" target="_blank" rel="noopener">⬆ 올리기</a>` : ''}${d.folderUrl ? `<a class="btn" href="${esc(d.folderUrl)}" target="_blank" rel="noopener">GitHub docs/</a>` : ''}</div>`;
+  const files = d.files || []; const dfiles = (d.driveFiles || []); const dcount = dfiles.filter(f => !f.dir).length;
+  $('x-n').textContent = files.length + dcount ? `${files.length + dcount}개` : '';
+  const dayAgo = Date.now() - 86400e3; const isNew = t => t && Date.parse(t) > dayAgo;
+  let html = `<div class="row">${d.drive ? `<a class="btn drive" href="${esc(d.drive)}" target="_blank" rel="noopener">📁 Drive 폴더</a>` : ''}${d.uploadUrl ? `<a class="btn" href="${esc(d.uploadUrl)}" target="_blank" rel="noopener">⬆ 올리기</a>` : ''}${d.folderUrl ? `<a class="btn" href="${esc(d.folderUrl)}" target="_blank" rel="noopener">GitHub docs/</a>` : ''}${d.drive && d.driveEnabled ? `<button class="btn" type="button" id="x-refresh" title="Drive 목록 다시 읽기">↻</button>` : ''}</div>`;
   if ((d.links || []).length) html += `<div class="group">링크</div><ul class="dlist">${d.links.map(l => `<li><a class="xitem" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="xi">🔗</span><span class="xt">${esc(l.name || l.url)}</span><span class="xw">${esc(l.note || '')}</span></a></li>`).join('')}</ul>`;
-  if (files.length) html += `<div class="group">파일 · 최근 순</div><ul class="dlist">${files.map(f => `<li><a class="xitem ${f.updatedAt && Date.parse(f.updatedAt) > dayAgo ? 'new' : ''}" href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${fileIcon(f.name)}</span><span style="min-width:0"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.updatedAt ? fmtRel(f.updatedAt) : ''}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
-  else html += `<div class="note">아직 자료가 없습니다. ${d.drive ? 'Drive 폴더에 올리거나, ' : ''}data repo의 <code>docs/</code> 폴더에 올리면 여기에 보입니다${d.drive ? '' : ' (Drive 폴더는 repo의 <code>office.json</code>에 적으면 버튼이 생깁니다)'}.</div>`;
+  if (d.drive) {
+    if (dfiles.length) html += `<div class="group">Drive · 최근 순${d.driveAt ? ` <span style="text-transform:none;letter-spacing:0">(${fmtRel(d.driveAt)} 기준)</span>` : ''}</div><ul class="dlist">${dfiles.map(f => `<li><a class="xitem ${isNew(f.modifiedAt) && !f.dir ? 'new' : ''}" href="${esc(f.url || d.drive)}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.path)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.modifiedAt ? fmtRel(f.modifiedAt) : ''}</span></span><span class="xw">${f.dir ? '폴더' : fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
+    if (d.driveError) html += `<div class="note">Drive 목록을 읽지 못했습니다: ${esc(d.driveError)}${/not shared|not found/.test(d.driveError) ? ' — 폴더를 서비스 계정 이메일에 공유했는지 확인' : ''}</div>`;
+    else if (!d.driveEnabled && WK.user && WK.user.admin) html += `<div class="note">Drive 파일 목록은 Worker에 <code>GDRIVE_SA_KEY</code>(서비스 계정 키)를 넣으면 여기 보입니다 — docs/worker-setup.md §6.</div>`;
+    else if (!dfiles.length && d.driveEnabled) html += `<div class="note">Drive 폴더가 비어 있습니다.</div>`;
+  }
+  if (files.length) html += `<div class="group">GitHub docs/ · 최근 순</div><ul class="dlist">${files.map(f => `<li><a class="xitem ${isNew(f.updatedAt) ? 'new' : ''}" href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${fileIcon(f.name)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.updatedAt ? fmtRel(f.updatedAt) : ''}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
+  if (!files.length && !dfiles.length && !d.driveError) html += `<div class="note">아직 자료가 없습니다. ${d.drive ? 'Drive 폴더에 올리거나, ' : ''}data repo의 <code>docs/</code> 폴더에 올리면 여기에 보입니다${d.drive ? '' : ' (Drive 폴더는 repo의 <code>office.json</code>에 적으면 버튼이 생깁니다)'}.</div>`;
   el.innerHTML = html;
+  const rb = $('x-refresh'); if (rb) rb.onclick = () => { rb.disabled = true; loadDocs(true); };
 }
 
 // ================================================================ 회의 · 토론 (GitHub Discussions behind /api)

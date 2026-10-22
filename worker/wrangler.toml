@@ -34,6 +34,7 @@ SESSION_TTL_DAYS = "30"
 #   GH_WEBHOOK_SECRET                 shared secret of the data repos' webhook
 #   SESSION_SECRET                    random 32+ bytes, signs the login cookie
 #   PROJECT_TOKENS                    JSON {"<project>": "<write token>"} for direct ingest (KBDS, Mac)
+#   GDRIVE_SA_KEY                     optional: Google service-account JSON key → Drive folder listing in the 자료실 card
 
 # Optional: point GitHub API calls at a mock during local tests (never set in production).
 # [vars] GH_API_BASE = "http://127.0.0.1:8799"

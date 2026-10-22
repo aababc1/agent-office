@@ -12,7 +12,7 @@ export function normalizePem(pem) {
   const body = m[2].replace(/\s+/g, "");
   return `-----BEGIN ${m[1]}-----\n${body.match(/.{1,64}/g).join("\n")}\n-----END ${m[1]}-----\n`;
 }
-async function importPem(pemRaw) {
+export async function importPem(pemRaw) {
   const pem = normalizePem(pemRaw);
   const body = pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
   let der = Uint8Array.from(atob(body), c => c.charCodeAt(0));

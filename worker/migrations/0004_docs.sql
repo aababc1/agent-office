@@ -9,3 +9,4 @@ CREATE TABLE IF NOT EXISTS docs (
   PRIMARY KEY (project, path)
 );
 ALTER TABLE projects ADD COLUMN docs_json TEXT;   -- {"drive": "<folder url>", "links": [{"name","url"}], "branch": "main"}
+ALTER TABLE projects ADD COLUMN drive_json TEXT;  -- cached Google Drive folder listing {"folder","at","files":[…],"error"}
