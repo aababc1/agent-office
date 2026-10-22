@@ -41,7 +41,7 @@ python3 office_probe.py once --plan plan.yaml --site kbds           # 한 번
 tmux new -s office -d 'python3 ~/office/office_probe.py loop --plan ~/office/plan.yaml --site kbds --every 120'   # 2분마다, 계속
 # 또는 ./02_prefetch_kbds.sh office  (같은 일을 00_env_local.sh 설정으로)
 ```
-`tmux attach -t office`로 로그 확인. 로그인 노드가 재부팅되면 다시 띄운다. 전송에 실패하면 `~/.agent-office/spool/`에 남겨두고 다음 번에 다시 시도한다.
+`tmux attach -t office`로 로그 확인. 로그인 노드가 재부팅되면 다시 띄운다. 전송에 실패하면 `~/.agent-office/spool/`에 기록을 남기고, 다음 프로브가 최신 상태를 다시 보낸다(상태는 스냅샷이라 재전송이 따로 필요 없다).
 
 **안 되면** (파일로):
 ```bash

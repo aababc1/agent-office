@@ -423,12 +423,20 @@ def apply(store: RunStore, args: argparse.Namespace) -> dict[str, Any]:
     return rec
 
 
+USER_AGENT = "agent-office-emit/1"   # Cloudflare's browser-integrity check answers 403 (error 1010) to the default "Python-urllib/x.y"
+
+
 def post(url: str, token: str, payload: dict[str, Any]) -> None:
     req = urllib.request.Request(url.rstrip("/") + ("" if url.endswith("/ingest/events") else "/ingest/events"), method="POST",
-                                 data=json.dumps(payload, ensure_ascii=False).encode(), headers={"content-type": "application/json", "authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        if r.status >= 300:
-            raise RuntimeError(f"worker {r.status}")
+                                 data=json.dumps(payload, ensure_ascii=False).encode(),
+                                 headers={"content-type": "application/json", "authorization": f"Bearer {token}", "user-agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            if r.status >= 300:
+                raise RuntimeError(f"worker {r.status}")
+    except urllib.error.HTTPError as e:                       # say what the server said: "bad project token" vs a Cloudflare page
+        body = e.read(200).decode("utf-8", "replace").strip().replace("\n", " ")
+        raise RuntimeError(f"HTTP {e.code} {body[:120]}") from None
 
 
 def main_emit(argv: list[str] | None = None) -> int:
