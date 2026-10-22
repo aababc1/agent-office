@@ -147,7 +147,10 @@ select.btn{padding:4px 6px}
 .badge.work{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,transparent)} .badge.think{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,transparent)} .badge.err{color:var(--bad);border-color:var(--bad)}
 .person .l2{font-size:11px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
 .person .l3{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
-.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;max-height:240px;overflow:auto;overscroll-behavior:contain}
+.tasks.done{max-height:200px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.tasks-toggle{margin-top:6px;width:100%;text-align:left;font-size:11px;color:var(--muted);padding:5px 8px}
+.tasks-toggle:hover{color:var(--ink)}
 .task{display:flex;gap:8px;align-items:flex-start;font-size:12px}
 .task .st{flex:none;margin-top:2px;width:14px;height:14px;border-radius:4px;border:1.5px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center;font-size:9px}
 .task.completed .st{background:var(--live);border-color:var(--live);color:#fff}
@@ -265,21 +268,21 @@ select.btn{padding:4px 6px}
         <div><div class="v" id="k-think">0s</div><div class="k">thinking</div></div>
       </div>
     </section>
+    <section class="card" data-tab="pipe" id="pipe-card" hidden>
+      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
+      <div class="sec pipe" id="pipe"></div>
+    </section>
     <section class="card" data-tab="people">
       <h2>사무실 사람들 <span class="n" id="p-count"></span></h2>
       <div class="sec people" id="people"></div>
     </section>
     <section class="card" data-tab="progress">
-      <h2>할 일 목록</h2>
-      <div class="sec"><ul class="tasks" id="tasks"></ul></div>
+      <h2>할 일 목록 <span class="n" id="t-n"></span></h2>
+      <div class="sec"><ul class="tasks" id="tasks"></ul><button class="btn tasks-toggle" type="button" id="tasks-done-toggle" hidden></button><ul class="tasks done" id="tasks-done" hidden></ul></div>
     </section>
     <section class="card" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
-    </section>
-    <section class="card" data-tab="pipe" id="pipe-card" hidden>
-      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
-      <div class="sec pipe" id="pipe"></div>
     </section>
     <section class="card" data-tab="talk" id="talk-card" hidden>
       <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
@@ -799,22 +802,48 @@ function resetFloor() { for (const c of Object.values(S.chars)) { if (c.leaving)
 
 // ================================================================ panels
 const liveStatus = (p, now = Date.now()) => p.status === 'ended' ? 'ended' : (now - Date.parse(p.lastAt || 0) < 120e3 ? 'active' : 'idle');   // the file's status can be stale: no push while idle
+const taskLi = t => `<li class="task ${esc(t.status)}"><span class="st">${t.status === 'completed' ? '✓' : ''}</span><span class="tid">#${esc(t.id)}</span><span class="tx">${esc(t.text)}</span></li>`;
+let tasksDoneOpen = false;
+function renderTasks(tasks) {
+  // open items first (in_progress on top); finished ones fold away behind one line so the rail stays short
+  const open = tasks.filter(t => t.status !== 'completed').sort((a, b) => (a.status === 'in_progress' ? 0 : 1) - (b.status === 'in_progress' ? 0 : 1));
+  const done = tasks.filter(t => t.status === 'completed');
+  $('t-n').textContent = tasks.length ? `${done.length}/${tasks.length}` : '';
+  $('tasks').innerHTML = open.map(taskLi).join('') || (done.length ? `<li class="note">✓ ${done.length}개 모두 완료</li>` : '<li class="note">아직 등록된 할 일이 없습니다</li>');
+  const tg = $('tasks-done-toggle'), dl = $('tasks-done'); tg.hidden = !done.length; dl.hidden = !done.length || !tasksDoneOpen;
+  if (done.length) { tg.textContent = `${tasksDoneOpen ? '▾' : '▸'} 완료 ${done.length}개`; dl.innerHTML = done.map(taskLi).join(''); }
+  tg.onclick = () => { tasksDoneOpen = !tasksDoneOpen; renderTasks(tasks); };
+}
 function renderProgress() {
-  const p = S.progress; if (!p) return;
+  const p = S.progress;
+  const fl = (S.index.projects || []).find(x => (x.key || x.name) === (S.floorKey || S.project)); const em = fl && fl.emitterAt ? Date.parse(fl.emitterAt) : 0;
+  $('r-project').textContent = S.project || '—'; $('r-session').textContent = S.session || '—';
+  $('r-emitter').textContent = em ? (Date.now() - em < 45 * 60e3 ? `살아 있음 · ${fmtRel(fl.emitterAt)}` : `신호 없음 · ${fmtRel(fl.emitterAt)}`) : '—';
+  if (!p) {   // a floor with no Claude session yet (a compute-only project): clear the session panels, the 공정 card carries the progress
+    $('p-ratio').textContent = '세션 없음'; $('p-bar').style.width = '0%';
+    for (const k of ['k-commits', 'k-files', 'k-tools']) $(k).textContent = '0'; $('k-think').textContent = '0s';
+    renderTasks([]); $('files').innerHTML = '<span>세션 없음</span>'; $('r-last').textContent = fl && fl.lastAt ? fmtRel(fl.lastAt) : '—';
+    const st = $('t-status'); st.className = 'pill idle'; st.innerHTML = `<span class="lamp"></span><span>${em ? `프로브 · ${fmtRel(fl.emitterAt)}` : '세션 없음'}</span>`;
+    renderPipelineRatio(); return;
+  }
   const pr = p.progress || {}; const ratio = pr.ratio == null ? 0 : pr.ratio;
   $('p-ratio').textContent = pr.tasksTotal ? `${pr.tasksDone}/${pr.tasksTotal} · ${Math.round(ratio * 100)}%` : '할 일 없음';
   $('p-bar').style.width = `${Math.round(ratio * 100)}%`;
+  if (!pr.tasksTotal) renderPipelineRatio();
   $('k-commits').textContent = (p.git && p.git.commits || []).length;
   $('k-files').textContent = (p.git && p.git.filesChanged || []).length;
   $('k-tools').textContent = (p.counters || {}).toolCalls || 0;
   $('k-think').textContent = fmtS((p.counters || {}).think_ms || 0);
-  $('tasks').innerHTML = (p.tasks || []).map(t => `<li class="task ${esc(t.status)}"><span class="st">${t.status === 'completed' ? '✓' : ''}</span><span class="tid">#${esc(t.id)}</span><span class="tx">${esc(t.text)}</span></li>`).join('') || '<li class="note">아직 등록된 할 일이 없습니다</li>';
+  renderTasks(p.tasks || []);
   const files = (p.git && p.git.filesChanged || []).slice(0, 10); const commits = (p.git && p.git.commits || []);
   $('files').innerHTML = (commits.length ? `<span>커밋 ${commits.length}개 · 최근: ${esc(commits[commits.length - 1].msg || '')}</span>` : '<span>이 세션에서 커밋 없음</span>') + files.map(f => `<span>${esc(f)}</span>`).join('');
   const live = liveStatus(p); const st = $('t-status'); st.className = 'pill ' + live; st.innerHTML = `<span class="lamp ${live === 'active' ? 'on' : ''}"></span><span>${({active: 'LIVE', idle: `쉬는 중 · ${fmtRel(p.lastAt)}`, ended: '종료'})[live] || live}</span>`;
-  $('r-project').textContent = S.project || '—'; $('r-session').textContent = S.session || '—'; $('r-last').textContent = `${fmtRel(p.lastAt)} · ${(p.versions || []).join(', ')}`;
-  const fl = (S.index.projects || []).find(x => (x.key || x.name) === (S.floorKey || S.project)); const em = fl && fl.emitterAt ? Date.parse(fl.emitterAt) : 0;
-  $('r-emitter').textContent = em ? (Date.now() - em < 45 * 60e3 ? `살아 있음 · ${fmtRel(fl.emitterAt)}` : `신호 없음 · ${fmtRel(fl.emitterAt)}`) : '—';
+  $('r-last').textContent = `${fmtRel(p.lastAt)} · ${(p.versions || []).join(', ')}`;
+}
+/** No task list to measure by → the 진행도 bar shows the pipeline rollup instead (set by renderPipeline too, since it loads async). */
+function renderPipelineRatio() {
+  const roll = PP.run && PP.run.rollup; if (!roll || !roll.total) return;
+  $('p-ratio').textContent = `공정 ${roll.done}/${roll.total} · ${Math.round((roll.ratio || 0) * 100)}%`; $('p-bar').style.width = `${Math.round((roll.ratio || 0) * 100)}%`;
 }
 function renderPeople() {
   const p = S.progress || {}; const upto = S.mode === 'replay' ? S.cursor : S.events.length;
@@ -848,6 +877,7 @@ function renderFloors() {
 }
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
+  $('sessions').closest('.card').hidden = list.length < 2;    // nothing to choose from → no card (the floor guide already says "세션 N개")
   $('ses-n').textContent = list.length ? `${list.length}개` : '';
   $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.title || s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
   $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
@@ -913,6 +943,7 @@ function renderPipeline() {
   if ((run.sites || []).length) html += `<div class="cluster">${run.sites.map(x => `<div class="row"><span>프로브 · ${esc(x.site)}</span><b>${x.probedAt ? fmtRel(x.probedAt) : '—'}</b></div>`).join('')}</div>`;
   if ((plan.milestones || []).length) html += `<div class="cluster">${plan.milestones.map(m => `<div class="row"><span>🏁 ${esc(m.name)}</span><b>${esc(m.date)}</b></div>`).join('')}</div>`;
   el.innerHTML = html;
+  if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }
 
 // ================================================================ 회의 · 토론 (GitHub Discussions behind /api)
@@ -1039,7 +1070,7 @@ async function selectProject(key, no, showIndicator) {
   if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); }
   loadPipeline();
   const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
-  if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
+  if (s) await selectSession(s.session); else { S.session = null; S.events = []; S.progress = null; $('t-project').textContent = S.project; $('t-session').textContent = ''; clearInterval(S.pollTimer); resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }
 async function selectSession(ses) {
   S.session = ses; renderSessions(); stopReplay(); S.mode = 'live'; $('b-live').classList.add('on'); $('b-replay').classList.remove('on'); $('scrub').hidden = true;
