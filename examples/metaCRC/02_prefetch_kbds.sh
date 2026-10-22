@@ -5,7 +5,8 @@
 #
 # Usage:
 #   ./02_prefetch_kbds.sh env        write 00_env_local.sh (edit paths once; same variables as the runbook's 00_env.sh)
-#   ./02_prefetch_kbds.sh conda      create the metacrc-dl env (sra-tools>=3.1)  — or use your existing sra-tools env
+#   ./02_prefetch_kbds.sh conda      create the metacrc-dl env (sra-tools>=3.1). NOTE: K-BDS login node is CentOS 7 (glibc 2.17);
+#                                    bioconda sra-tools 3.x needs glibc>=2.25 and will not run there -> use the existing `sra-tools` env (2.11.2)
 #   ./02_prefetch_kbds.sh run        download+validate everything in $RUNLIST (resume-safe; run in tmux)
 #   ./02_prefetch_kbds.sh retry      re-run only the runs listed in $LOG_DIR/prefetch.FAILED
 #   ./02_prefetch_kbds.sh status     counts, failures, disk, throughput
@@ -41,7 +42,8 @@ conda run -n metacrc-dl prefetch --version && conda run -n metacrc-dl vdb-valida
 
 run|retry)
 source ./00_env_local.sh
-eval "$(conda shell.bash hook)"; conda activate "${DL_ENV:-metacrc-dl}"      # DL_ENV=sra-tools to reuse the existing env
+eval "$(conda shell.bash hook)"; conda activate "${DL_ENV:-sra-tools}"       # sra-tools 2.11.2 (the only build that runs on this glibc); DL_ENV=... to override
+prefetch --version >/dev/null 2>&1 || { echo "prefetch does not run in env ${DL_ENV:-sra-tools} (glibc?) — try DL_ENV=sra-tools"; exit 1; }
 # cache on the big disk, not $HOME (runbook)
 vdb-config -s /repository/user/main/public/root="$SRA_DIR"
 vdb-config -s /LIBS/GUID="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)" 2>/dev/null || true
@@ -61,7 +63,8 @@ fetch_one() {
   done
   local T0=$(date +%s)
   if [ ! -s "$SRA" ]; then
-    prefetch --max-size u --progress -O "$SRA_DIR" "$RUN" >> "$LOG_DIR/prefetch.$RUN.log" 2>&1 \
+    # --max-size 999G (not `u`: 2.11 syntax); 79 runs exceed the 20G default
+    prefetch --max-size 999G -O "$SRA_DIR" "$RUN" >> "$LOG_DIR/prefetch.$RUN.log" 2>&1 \
       || { echo "$RUN PREFETCH_FAIL" >> "$LOG_DIR/prefetch.FAILED"; return 1; }
   fi
   if vdb-validate "$SRA" > "$LOG_DIR/vdbval.$RUN.log" 2>&1; then
