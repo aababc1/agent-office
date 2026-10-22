@@ -78,6 +78,12 @@ push는 타이머가 아니라 **사건 기준**이다: 새 기록이 생기고 
 
 기본은 Worker(아래). 정적 호스팅만 쓰려면 `viewer/`와 데이터 폴더를 같이 올리면 된다. 뷰어는 `data/index.json` → `data/<project>/project.json` → `<session>.events.jsonl` 순으로 읽고, 라이브 모드에서는 10초마다(`window.OFFICE_POLL_MS`) 다시 읽는다. 다시보기는 가상 시계로 재생하며 긴 공백은 실시간 2초로 압축한다.
 
+## 프로젝트 진행도: plan.yaml + office-probe
+
+`plan.yaml`(예: `examples/metaCRC/plan.yaml`)이 프로젝트의 단계·단위·총량·완료 판정 기준·실행 위치(`sites`)를 적는다. 내용은 런북에서 그대로 뽑고 지어내지 않는다. `office-plan check plan.yaml`이 검증하고 `plan.json`을 쓴다.
+
+`office-probe --site <key>`는 그 사이트의 단계만 읽어 보고한다: 런북식 산출물 마커(mtime = 완료 시각), `*.FAILED` 로그, Nextflow `trace.txt`·`work/`(실행 중 task)·`.nextflow.log`, `squeue`/`sinfo`. 완료 속도(최근 3/12/48h)로 ETA를 낸다. 사이트마다 run 하나(`local`, `kbds`)로 올라가고 Worker가 단계별로 합친다. trace에만 있는 process는 `unplanned`로 그대로 보인다. 단일 파일 `dist/office_probe.py`(`python3 extractor/build_probe_bundle.py`)를 scp하면 끝. 절차: `docs/kbds-probe.md`, 다운로드 스크립트: `examples/metaCRC/02_prefetch_local.sh`.
+
 ## 아무 서버에서나 진행 보고하기 (office-emit)
 
 계산이 어디서 돌든(로컬 서버, KBDS, Mac) 결과 파일이 생기는 곳에서 한 줄이면 된다. python3만 있으면 된다.

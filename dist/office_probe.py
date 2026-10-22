@@ -251,12 +251,25 @@ def expand_vars(s: str, env: dict[str, str]) -> str:
     return re.sub(r"\$\{(\w+)\}|\$(\w+)", rep, s)
 
 
-def resolved_paths(plan: dict[str, Any]) -> dict[str, str]:
-    """Resolve `paths:` in order so later entries may use earlier ones (like 00_env.sh)."""
+def resolved_paths(plan: dict[str, Any], site: str | None = None) -> dict[str, str]:
+    """Resolve `paths:` in order so later entries may use earlier ones (like 00_env.sh).
+    A site's own `paths` (plan.sites.<site>.paths) override the global ones, so the same plan works on
+    the lab server and on K-BDS with different roots."""
+    merged: dict[str, Any] = dict(plan.get("paths") or {})
+    if site:
+        merged.update(((plan.get("sites") or {}).get(site) or {}).get("paths") or {})
     out: dict[str, str] = {}
-    for k, v in (plan.get("paths") or {}).items():
+    for k, v in merged.items():
         out[k] = expand_vars(str(v), out)
     return out
+
+
+def stages_for_site(plan: dict[str, Any], site: str | None) -> list[dict[str, Any]]:
+    """Stages a probe on `site` is responsible for: those whose `where` matches (default = plan.where)."""
+    if not site:
+        return list(plan.get("stages") or [])
+    default = plan.get("where")
+    return [st for st in (plan.get("stages") or []) if (st.get("where") or default) == site]
 
 
 def main_plan(argv: list[str] | None = None) -> int:
@@ -356,10 +369,10 @@ class RunStore:
         except (OSError, json.JSONDecodeError):
             summary = {"v": 1, "name": self.project, "sessions": {"total": 0, "active": 0, "latest": None}, "alerts": []}
         st = self.state["stages"]
-        done = sum(s.get("done", 0) for s in st.values()); total = sum(s.get("total", 0) for s in st.values())
+        done = sum((s.get("done") or 0) for s in st.values() if s.get("total")); total = sum((s.get("total") or 0) for s in st.values())
         summary["pipeline"] = {"run": self.run_id, "status": self.state["status"], "lastAt": self.state["lastAt"],
                                "done": done, "total": total, "ratio": round(done / total, 3) if total else None,
-                               "stages": {k: {"done": v.get("done", 0), "total": v.get("total", 0), "etaMin": v.get("etaMin")} for k, v in st.items()},
+                               "stages": {k: {"done": v.get("done") or 0, "total": v.get("total"), "etaMin": v.get("etaMin"), "eta": v.get("eta")} for k, v in st.items()},
                                "running": sum(1 for j in self.state["jobs"].values() if j.get("status") == "running"),
                                "failed": self.state["counters"]["failed"]}
         summary["emitterAt"] = iso()
@@ -754,12 +767,16 @@ def read_sinfo(partitions: list[str] | None) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------- main probe
-def probe(plan: dict[str, Any], run_id: str | None = None) -> dict[str, Any]:
+def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None = None) -> dict[str, Any]:
     now = time.time()
-    paths = resolved_paths(plan)
-    site = plan.get("site") or {}
-    pipe = plan.get("pipeline") or {}
-    report: dict[str, Any] = {"v": 1, "project": plan["project"], "at": iso(now), "site": site.get("name"), "stages": {}, "unplanned": {}}
+    paths = resolved_paths(plan, site_key)
+    sites = plan.get("sites") or {}
+    site = (sites.get(site_key) if site_key else None) or plan.get("site") or {}
+    # the Nextflow run belongs to one site: the plan's default `where`, or a site with its own `pipeline:` block
+    pipe = dict(plan.get("pipeline") or {}) if (site_key is None or site_key == plan.get("where")) else {}
+    pipe.update(site.get("pipeline") or {})
+    my_stages = stages_for_site(plan, site_key)
+    report: dict[str, Any] = {"v": 1, "project": plan["project"], "at": iso(now), "site": site.get("name") or site_key, "siteKey": site_key, "stages": {}, "unplanned": {}}
 
     # 1) Nextflow
     trace_path = expand_vars(str(pipe.get("trace", "")), paths) if pipe.get("trace") else ""
@@ -775,7 +792,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None) -> dict[str, Any]:
 
     # 2) plan stages: markers first, nextflow mapping second, "implied by later stage" last
     mapped_procs: set[str] = set()
-    for st in plan.get("stages") or []:
+    for st in my_stages:
         name = st["name"]; done = st.get("done") or {}
         s: dict[str, Any] = {"name": name, "desc": st.get("desc"), "unit": st["unit"], "after": st.get("after") or [], "runner": st.get("runner") or {}}
         if done.get("kind") == "nextflow":
@@ -815,7 +832,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None) -> dict[str, Any]:
 
     # implied-by: a unit done in a later stage counts as done earlier (markers may have been deleted on purpose)
     stages = report["stages"]
-    for st in plan.get("stages") or []:
+    for st in my_stages:
         imp = st.get("implied_by")
         if imp and imp in stages and st["name"] in stages:
             a, b = stages[st["name"]], stages[imp]
@@ -834,8 +851,9 @@ def probe(plan: dict[str, Any], run_id: str | None = None) -> dict[str, Any]:
             report["unplanned"][pname] = {"done": p["done"] + p["cached"], "failed": p["failed"], "running": inflight_by_proc.get(pname, 0), "lastAt": p["lastAt"], "taskS": p["realtimeS"]}
 
     # 3) Slurm
-    sq = read_squeue(site.get("slurm_user") or os.environ.get("USER"))
-    si = read_sinfo(site.get("partitions"))
+    has_slurm = bool(site.get("slurm_user")) or shutil.which("squeue") is not None
+    sq = read_squeue(site.get("slurm_user") or os.environ.get("USER")) if has_slurm else None
+    si = read_sinfo(site.get("partitions")) if has_slurm else None
     if sq:
         for s in stages.values():
             job = s.pop("_job", None)
@@ -872,7 +890,7 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
     for t in (report.get("nextflow") or {}).get("inflight", [])[:100]:
         jobs[f"{t['process']}:{t['tag']}"] = {"stage": t["process"], "status": "running", "startedAt": t["startedAt"]}
     r = report["rollup"]
-    return {"v": 1, "id": run_id, "project": report["project"], "startedAt": None, "lastAt": r.get("lastAt") or report["at"],
+    return {"v": 1, "id": run_id, "project": report["project"], "site": report.get("site"), "siteKey": report.get("siteKey"), "startedAt": None, "lastAt": r.get("lastAt") or report["at"],
             "status": r["status"], "stages": st, "jobs": jobs, "notes": [], "counters": {"done": r["done"], "failed": r["failed"]},
             "rollup": r, "cluster": report.get("cluster"), "nextflow": {k: v for k, v in (report.get("nextflow") or {}).items() if k != "inflight"},
             "unplanned": report.get("unplanned"), "probedAt": report["at"]}
@@ -904,23 +922,27 @@ def main_probe(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="office-probe", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mode", choices=["once", "loop", "show"], help="show = print the report, deliver nothing")
     ap.add_argument("--plan", required=True)
-    ap.add_argument("--run", default=os.environ.get("OFFICE_RUN") or "kbds", help="run id (OFFICE_RUN)")
+    ap.add_argument("--site", default=os.environ.get("OFFICE_SITE"), help="which plan.sites entry this host is (local, kbds, …); only its stages are probed")
+    ap.add_argument("--run", default=os.environ.get("OFFICE_RUN"), help="run id (default: the site name)")
     ap.add_argument("--to", action="append", default=None, help="DATA_DIR and/or Worker URL (repeatable; OFFICE_TO)")
     ap.add_argument("--token", default=os.environ.get("OFFICE_TOKEN"))
     ap.add_argument("--every", type=int, default=300, help="seconds between probes in loop mode")
     a = ap.parse_args(argv)
     plan = load_plan(a.plan)
+    if a.site and a.site not in (plan.get("sites") or {}):
+        sys.stderr.write(f"office-probe: --site {a.site} is not in plan.sites ({', '.join((plan.get('sites') or {}).keys()) or 'none'})\n"); return 2
+    run_id = a.run or a.site or "run"
     targets = a.to or ([os.environ["OFFICE_TO"]] if os.environ.get("OFFICE_TO") else [])
     while True:
-        report = probe(plan, a.run)
-        state = to_pipeline_state(report, a.run)
+        report = probe(plan, run_id, a.site)
+        state = to_pipeline_state(report, run_id)
         if a.mode == "show":
             print(json.dumps({k: v for k, v in state.items() if k not in ("jobs",)}, ensure_ascii=False, indent=1)); return 0
         if not targets:
             sys.stderr.write("office-probe: --to DATA_DIR or --to https://…worker URL (or OFFICE_TO)\n"); return 2
         rc = deliver(state, targets, a.token, plan["project"])
         r = report["rollup"]
-        sys.stderr.write(f"[probe] {plan['project']} {report['at']} done {r['done']}/{r['total']} failed {r['failed']} running {r['running']} canSubmit={(report.get('cluster') or {}).get('canSubmit')} rc={rc}\n")
+        sys.stderr.write(f"[probe] {plan['project']}@{a.site or '-'} {report['at']} done {r['done']}/{r['total']} failed {r['failed']} running {r['running']} canSubmit={(report.get('cluster') or {}).get('canSubmit')} rc={rc}\n")
         if a.mode == "once":
             return rc
         time.sleep(max(30, a.every))

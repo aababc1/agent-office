@@ -9,14 +9,22 @@ members: [aababc1]
 dates:
   start: 2026-10-22
   due: null                             # TODO
-where: K-BDS                            # default compute site for stages below
+where: kbds                             # default site for stages that do not say `where:`
 
-# Where the probe looks. All optional; whatever exists is used. Nothing is installed on K-BDS.
-site:
-  name: K-BDS (KISTI)
-  login: bdata-login01                  # login-only node: the probe is I/O-light (stat + read logs) and runs here
-  slurm_user: k260a01
-  partitions: [cpu64-only, cpu64-only-m512GB, cpu32-only]   # the ones this project submits to (sinfo is read for these)
+# Two machines, one plan. Each runs `office-probe --site <key>` and reports only its own stages;
+# the office merges them into one pipeline. A site's `paths` override the global ones below.
+sites:
+  local:
+    name: lab Linux server              # prefetch + vdb-validate (NCBI download), then upload to K-BDS dm node
+    paths:
+      PROJ: /data/metaCRC               # TODO: real path on the lab server
+  kbds:
+    name: K-BDS (KISTI)
+    login: bdata-login01                # login-only node: the probe is I/O-light (stat + read logs) and runs here
+    slurm_user: k260a01
+    partitions: [cpu64-only, cpu64-only-m512GB, cpu32-only]   # the ones this project submits to (sinfo is read for these)
+    paths:
+      PROJ: /scratch/$USER/metaCRC
 pipeline:
   kind: nextflow                        # metaFun on the Slurm executor
   trace: $PROJ/run/trace.txt            # nextflow run ... -with-trace $PROJ/run/trace.txt   (one line per finished task)
@@ -55,19 +63,29 @@ units:
 
 stages:
   - name: prefetch
-    desc: "prefetch + vdb-validate (02_prefetch.sh, shell/tmux, 6 parallel)"
+    desc: "prefetch + vdb-validate on the lab server (02_prefetch_local.sh, 6 parallel)"
+    where: local
     unit: run
     units: {file: $RUNLIST}
     done: {kind: file, path: "$SRA_DIR/{run}/.validated"}
     failed: {log: "$LOG_DIR/prefetch.FAILED"}           # lines: "<run> PREFETCH_FAIL|VDB_INVALID"
-    implied_by: dump                                      # 03_dump deletes $SRA_DIR/<run> after a successful dump
     runner: {kind: shell, parallel: 6}
+
+  - name: upload
+    desc: "validated .sra → K-BDS dm node (kbds-dm.kisti.re.kr); marker written after a size check"
+    where: local
+    unit: run
+    units: {file: $RUNLIST}
+    after: [prefetch]
+    done: {kind: file, path: "$SRA_DIR/{run}/.uploaded"}
+    failed: {log: "$LOG_DIR/upload.FAILED"}
+    runner: {kind: shell, parallel: 4}
 
   - name: dump
     desc: "fasterq-dump → fastq.gz (03_dump.sbatch)"
     unit: run
     units: {file: $RUNLIST}
-    after: [prefetch]
+    after: [upload]
     done: {kind: file, path: "$FQ_DIR/{run}_1.fastq.gz"}
     failed: {log: "$LOG_DIR/dump.FAILED"}                # NOT_VALIDATED | NO_SRA | DUMP_FAIL
     runner: {kind: slurm, job: metacrc-dump, array: 1000, cpus: 8, mem: 24G, time_h: 12}

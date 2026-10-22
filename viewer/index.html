@@ -186,6 +186,26 @@ select.btn{padding:4px 6px}
 .talk textarea,.talk input[type=text]{width:100%;font:inherit;font-size:12px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:7px 8px;resize:vertical;min-height:34px}
 .talk textarea{min-height:84px} .talk label.ck{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
 .badge-new{font-size:10px;color:var(--accent);font-weight:600;margin-left:6px}
+/* 공정 (pipeline stages) */
+.pipe{display:flex;flex-direction:column;gap:10px}
+.pipe .head{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pipe .head div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.pipe .head .v{font-family:var(--mono);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe .head .k{font-size:9px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.pst{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center}
+.pst .sn{font-weight:600;font-size:12px;display:flex;gap:6px;align-items:center;min-width:0}
+.pst .sn small{font-family:var(--mono);font-weight:400;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pst .sc{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pst .bar{grid-column:1/-1;margin:0;display:flex;background:var(--paper);border:1px solid var(--line)}
+.pst .bar i{display:block;height:100%;border-radius:0;transition:width .6s}
+.pst .bar .d{background:var(--accent)} .pst .bar .r{background:color-mix(in srgb,var(--accent) 45%,transparent)} .pst .bar .f{background:var(--bad)}
+.pst .se{grid-column:1/-1;font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.pst .se b{color:var(--ink);font-weight:600}
+.pst.blocked .sn{color:var(--muted)}
+.cluster{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.cluster .row{display:flex;justify-content:space-between;gap:8px} .cluster .row b{color:var(--ink);font-weight:600;font-family:var(--mono)}
+.unplanned{font-size:11px;color:var(--muted)} .unplanned code{font-family:var(--mono);background:var(--paper);padding:1px 4px;border-radius:4px}
+@media (max-width:760px){.app[data-tab="pipe"] .card[data-tab="pipe"]{display:block}}
 @media (max-width:760px){.app[data-tab="talk"] .card[data-tab="talk"]{display:block}}
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}.pill.active .lamp{animation:none}}
 </style>
@@ -195,7 +215,7 @@ select.btn{padding:4px 6px}
 <!--OFFICE:BODY-START-->
 <div class="app" id="app" data-tab="progress">
   <nav class="tabs" aria-label="패널">
-    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="log">로그</button><button type="button" data-t="talk">회의</button><button type="button" data-t="floors">층</button>
+    <button type="button" class="on" data-t="progress">진행도</button><button type="button" data-t="people">사람</button><button type="button" data-t="pipe">공정</button><button type="button" data-t="log">로그</button><button type="button" data-t="talk">회의</button><button type="button" data-t="floors">층</button>
   </nav>
   <aside class="guide">
     <section class="card" data-tab="floors">
@@ -256,6 +276,10 @@ select.btn{padding:4px 6px}
     <section class="card" data-tab="progress">
       <h2>git · 손댄 파일</h2>
       <div class="sec files" id="files"></div>
+    </section>
+    <section class="card" data-tab="pipe" id="pipe-card" hidden>
+      <h2>공정 · 파이프라인 <span class="n" id="pp-n"></span></h2>
+      <div class="sec pipe" id="pipe"></div>
     </section>
     <section class="card" data-tab="talk" id="talk-card" hidden>
       <h2>회의 · 토론 <span class="n" id="d-n"></span><button class="btn" type="button" id="d-new" style="margin-left:auto">새 글</button></h2>
@@ -355,6 +379,7 @@ function wkConnect() {
     if (msg.kind === 'discussion' && msg.project === S.project) { loadTalk(true); const n = document.querySelector('.tabs button[data-t="talk"]'); if (n) n.textContent = '회의 •'; return; }
     if (msg.kind !== 'update' || msg.project !== S.project || S.mode !== 'live') return;
     if ((msg.sessions || []).includes(S.session)) refresh(false);
+    if (msg.projectChanged) loadPipeline();
     if (msg.projectChanged || !(msg.sessions || []).includes(S.session)) followLatest(); };
   sock.onclose = () => { if (WK.sock !== sock) return; WK.sock = null; setTimeout(wkConnect, WK.backoff); WK.backoff = Math.min(WK.backoff * 2, 30000); };
   sock.onerror = () => { try { sock.close(); } catch (e) { /* noop */ } };
@@ -818,7 +843,7 @@ function renderFloors() {
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}${p.pipeline && p.pipeline.total ? `<div class="sb">공정 ${p.pipeline.done}/${p.pipeline.total} · ${Math.round((p.pipeline.ratio || 0) * 100)}%${p.pipeline.running ? ` · ▶${p.pipeline.running}` : ''}${p.pipeline.failed ? ` · <span style="color:var(--bad)">✕${p.pipeline.failed}</span>` : ''}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
   $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
 function renderSessions() {
@@ -827,6 +852,69 @@ function renderSessions() {
   $('sessions').innerHTML = list.map(s => `<li class="ses ${s.session === S.session ? 'sel' : ''}" tabindex="0" data-s="${esc(s.session)}"><span class="t">${esc(s.title || s.last || '제목 없는 세션')}<small>${shortId(s.session)}</small></span><span class="w">${liveStatus(s) === 'active' ? '<span class="pill active"><span class="lamp on"></span>지금 활동 중</span>' : fmtRel(s.lastAt)}</span></li>`).join('') || '<li class="empty">세션 없음</li>';
   $('sessions').querySelectorAll('.ses').forEach(el => { const go = () => selectSession(el.dataset.s); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
 }
+// ================================================================ 공정 · 파이프라인 (plan.yaml stages + probe/emit progress)
+const PP = {plan: null, run: null, runs: []};
+async function loadPipeline() {
+  const card = $('pipe-card'); PP.plan = null; PP.run = null;
+  if (!S.project) { card.hidden = true; return; }
+  try {
+    if (MODE === 'worker') { PP.plan = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/plan`); const r = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/pipeline`); PP.runs = r.runs || []; PP.run = r.merged ? {...r.merged, probedAt: r.merged.probedAt, rollup: {done: r.merged.done, total: r.merged.total, ratio: r.merged.ratio, running: r.merged.running, failed: r.merged.failed}} : null; }
+    else { try { PP.plan = await getJSON('plan.json'); } catch (e) { PP.plan = null; }
+      const fl = (S.index.projects || []).find(x => (x.key || x.name) === (S.floorKey || S.project)); const runId = fl && fl.pipeline && fl.pipeline.run;
+      PP.runs = []; for (const id of [runId, 'local', 'kbds'].filter((v, i, a) => v && a.indexOf(v) === i)) { try { PP.runs.push(await getJSON(`pipeline/${id}/progress.json`)); } catch (e) { /* no such run */ } }
+      PP.run = mergeRuns(PP.runs); }
+  } catch (e) { /* no plan yet */ }
+  const has = (PP.plan && (PP.plan.stages || []).length) || PP.run;
+  card.hidden = !has; if (has) renderPipeline();
+}
+function mergeRuns(runs) {
+  if (!runs.length) return null;
+  const stages = {}; let running = 0, failed = 0, lastAt = null, probedAt = null;
+  for (const p of runs) { for (const [k, v] of Object.entries(p.stages || {})) if (!stages[k] || (v.updatedAt || '') > (stages[k].updatedAt || '')) stages[k] = {...v, site: p.site || p.id};
+    if (p.rollup) { running += p.rollup.running || 0; failed += p.rollup.failed || 0; } if (p.lastAt > (lastAt || '')) lastAt = p.lastAt; if ((p.probedAt || '') > (probedAt || '')) probedAt = p.probedAt; }
+  const total = Object.values(stages).reduce((a, s) => a + (s.total || 0), 0); const done = Object.values(stages).reduce((a, s) => a + (s.total ? (s.done || 0) : 0), 0);
+  return {stages, lastAt, probedAt, rollup: {done, total, ratio: total ? done / total : null, running, failed}, sites: runs.map(p => ({site: p.site || p.id, probedAt: p.probedAt, canSubmit: (p.cluster || {}).canSubmit ?? null}))};
+}
+const fmtH = h => h == null ? '—' : h < 1 ? `${Math.round(h * 60)}분` : h < 48 ? `${h.toFixed(1)}시간` : `${(h / 24).toFixed(1)}일`;
+const fmtWhen = iso => iso ? new Date(iso).toLocaleString('ko-KR', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+function renderPipeline() {
+  const el = $('pipe'); const plan = PP.plan || {stages: []}; const run = PP.run || {stages: {}};
+  const order = (plan.stages || []).map(s => s.name); for (const k of Object.keys(run.stages || {})) if (!order.includes(k)) order.push(k);
+  const roll = run.rollup || null;
+  $('pp-n').textContent = roll && roll.total ? `${roll.done}/${roll.total} · ${Math.round((roll.ratio || 0) * 100)}%` : (run.probedAt ? '총량 미정' : '');
+  const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo)); const cl = {canSubmit: (run.sites || []).some(x => x.canSubmit === true) ? true : ((run.sites || []).some(x => x.canSubmit === false) ? false : null)};
+  const etaMax = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.eta && s.eta.hours) || 0));
+  let html = `<div class="head">
+    <div><div class="v">${roll ? `${roll.running}` : '—'}</div><div class="k">running</div></div>
+    <div><div class="v" style="${roll && roll.failed ? 'color:var(--bad)' : ''}">${roll ? roll.failed : '—'}</div><div class="k">failed</div></div>
+    <div><div class="v">${etaMax ? fmtH(etaMax) : '—'}</div><div class="k">ETA</div></div>
+    <div><div class="v">${cl.canSubmit == null ? '—' : cl.canSubmit ? '여유' : '꽉 참'}</div><div class="k">노드</div></div></div>`;
+  for (const name of order) {
+    const ps = (plan.stages || []).find(s => s.name === name) || {}; const st = (run.stages || {})[name] || {};
+    const total = st.total ?? null; const done = st.done || 0; const failed = st.failed || 0; const running = st.running || 0; const pending = st.pending || 0;
+    const pct = v => total ? `${Math.max(0, Math.min(100, v / total * 100))}%` : '0%';
+    const deps = (ps.after || st.after || []); const blocked = deps.some(d => { const x = (run.stages || {})[d]; return x && x.total && x.done < x.total; }) && !done && !running;
+    const unit = ps.unit || st.unit || ''; const runner = ps.runner || {};
+    html += `<div class="pst ${blocked ? 'blocked' : ''}">
+      <div class="sn">${esc(name)}${st.site ? `<small style="flex:none">@${esc(st.site)}</small>` : ''}<small title="${esc(ps.desc || st.desc || '')}">${esc(ps.desc || st.desc || '')}</small></div>
+      <div class="sc">${total != null ? `${done}/${total} ${esc(unit)}` : (st.note ? '총량 미정' : `${done} ${esc(unit)}`)}</div>
+      <div class="bar"><i class="d" style="width:${pct(done)}"></i><i class="r" style="width:${pct(running)}"></i><i class="f" style="width:${pct(failed)}"></i></div>
+      <div class="se">${running ? `<span>▶ <b>${running}</b> 실행</span>` : ''}${pending ? `<span>⏳ <b>${pending}</b> 대기</span>` : ''}${failed ? `<span style="color:var(--bad)">✕ <b>${failed}</b> 실패</span>` : ''}
+        ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h</span>` : ''}${st.eta ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> (${fmtWhen(st.eta.at)})</span>` : (total && done < total && !st.note ? '<span>ETA — 아직 측정 전</span>' : '')}
+        ${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 ${fmtRel(st.lastAt)}</span>` : ''}
+        ${runner.job ? `<span class="mono">${esc(runner.job)}${runner.time_h ? ` · ${runner.time_h}h` : ''}${runner.mem ? ` · ${esc(runner.mem)}` : ''}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div></div>`;
+  }
+  const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
+  for (const r of runsWithCluster) { const sq = r.cluster.squeue, si = r.cluster.sinfo;
+    html += `<div class="cluster"><div class="row"><span>${esc(r.site || r.id)} · Slurm ${esc((sq && sq.user) || '')}</span><b>${sq ? `${(sq.byState || {}).RUNNING || 0} 실행 · ${(sq.byState || {}).PENDING || 0} 대기` : ''}</b></div>`;
+    if (sq && Object.keys(sq.pendingReasons || {}).length) html += `<div class="row"><span>대기 사유</span><b>${Object.entries(sq.pendingReasons).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</b></div>`;
+    for (const [pn, p] of Object.entries((si && si.partitions) || {})) html += `<div class="row"><span>${esc(pn)}</span><b>idle ${p.idle} / ${p.total}</b></div>`;
+    html += `</div>`; }
+  if ((run.sites || []).length) html += `<div class="cluster">${run.sites.map(x => `<div class="row"><span>프로브 · ${esc(x.site)}</span><b>${x.probedAt ? fmtRel(x.probedAt) : '—'}</b></div>`).join('')}</div>`;
+  if ((plan.milestones || []).length) html += `<div class="cluster">${plan.milestones.map(m => `<div class="row"><span>🏁 ${esc(m.name)}</span><b>${esc(m.date)}</b></div>`).join('')}</div>`;
+  el.innerHTML = html;
+}
+
 // ================================================================ 회의 · 토론 (GitHub Discussions behind /api)
 const T = {list: null, open: null, mode: 'list', categories: [], url: null, lastSeen: 0};
 function contextFooter() {
@@ -949,6 +1037,7 @@ async function selectProject(key, no, showIndicator) {
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
   if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); }
+  loadPipeline();
   const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
   if (s) await selectSession(s.session); else { S.events = []; S.progress = null; resetFloor(); renderProgress(); renderPeople(); renderLog(); }
 }

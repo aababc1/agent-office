@@ -8,6 +8,7 @@ import { rawFile } from "./github.js";
 
 const RE_PROGRESS = /^sessions\/([^/]+)\.progress\.json$/;
 const RE_CHUNK = /^sessions\/([^/]+)\/events\.(\d{3})\.jsonl$/;
+const RE_PIPE = /^pipeline\/([^/]+)\/progress\.json$/;
 
 export async function webhook(request, env, ctx) {
   const body = await request.text();
@@ -40,7 +41,7 @@ export async function webhook(request, env, ctx) {
 
 export async function processRepoPush(env, repo, sha, paths) {
   // Order matters: summary/project first (they name the project), then progress (session → project), then event chunks.
-  const order = (f) => f === "summary.json" ? 0 : f === "project.json" ? 1 : RE_PROGRESS.test(f) ? 2 : RE_CHUNK.test(f) ? 3 : 9;
+  const order = (f) => f === "summary.json" ? 0 : f === "project.json" ? 1 : f === "plan.json" ? 1 : RE_PROGRESS.test(f) ? 2 : RE_CHUNK.test(f) ? 3 : RE_PIPE.test(f) ? 3 : 9;
   const wanted = paths.filter(f => order(f) < 9).sort((a, b) => order(a) - order(b));
   let project = await projectOfRepo(env, repo);
   const changed = { sessions: new Set(), project: false };
@@ -49,6 +50,8 @@ export async function processRepoPush(env, repo, sha, paths) {
     if (content == null) continue;
     if (path === "summary.json") { project = await upsertSummary(env, repo, JSON.parse(content)); changed.project = true; continue; }
     if (path === "project.json") { const pj = JSON.parse(content); project = project || pj.name; await upsertProjectMeta(env, repo, pj); changed.project = true; continue; }
+    if (path === "plan.json") { const pl = JSON.parse(content); project = project || pl.project; await upsertPlan(env, repo, pl); changed.project = true; continue; }
+    if ((m = RE_PIPE.exec(path))) { const run = JSON.parse(content); await upsertPipeline(env, run.project || project, run); changed.project = true; continue; }
     let m;
     if ((m = RE_PROGRESS.exec(path))) { const pr = JSON.parse(content); await upsertSession(env, pr.project || project, pr); changed.sessions.add(m[1]); continue; }
     if ((m = RE_CHUNK.exec(path))) { const events = parseJSONL(content); await insertEvents(env, m[1], events); changed.sessions.add(m[1]); continue; }
@@ -64,9 +67,11 @@ export async function direct(request, env) {
   let tokens = {}; try { tokens = JSON.parse(env.PROJECT_TOKENS || "{}"); } catch { /* unset */ }
   if (!project || !token || !tokens[project] || !timingSafeEqual(token, tokens[project])) return json({ error: "bad project token" }, 401);
   const touched = new Set();
-  if (body.summary) await upsertSummary(env, body.repo || null, { ...body.summary, name: project });
+  const repoHint = body.repo || (body.plan && body.plan.repo) || null;
+  if (body.summary) await upsertSummary(env, repoHint, { ...body.summary, name: project });
   if (body.progress) { await upsertSession(env, project, body.progress); touched.add(body.progress.session); }
   if (Array.isArray(body.events) && body.session) { await insertEvents(env, body.session, body.events); touched.add(body.session); }
+  if (body.plan) await upsertPlan(env, repoHint, { ...body.plan, project });
   if (body.pipeline) await upsertPipeline(env, project, body.pipeline);
   await broadcast(env, project, { kind: "update", project, sessions: [...touched], projectChanged: !!(body.summary || body.pipeline), at: nowIso() });
   return json({ ok: true });
@@ -105,6 +110,12 @@ async function insertEvents(env, session, events) {
     .map(e => stmt.bind(session, e.seq, e.t, e.actor, e.kind, e.tool || null, e.room || null, e.caption || null, e.ref || null,
                         e.dur_ms == null ? null : e.dur_ms, e.meta ? JSON.stringify(e.meta) : null));
   for (let i = 0; i < batch.length; i += 100) await env.DB.batch(batch.slice(i, i + 100));
+}
+async function upsertPlan(env, repo, plan) {
+  await env.DB.prepare(`INSERT INTO projects(name, repo, description, plan_json, updated_at) VALUES(?,?,?,?,?)
+     ON CONFLICT(name) DO UPDATE SET repo=COALESCE(excluded.repo, projects.repo), description=COALESCE(projects.description, excluded.description),
+     plan_json=excluded.plan_json, updated_at=excluded.updated_at`)
+    .bind(plan.project, repo || plan.repo || null, plan.description || null, JSON.stringify(plan), nowIso()).run();
 }
 async function upsertPipeline(env, project, run) {
   await env.DB.prepare(`INSERT INTO pipeline_runs(id, project, started_at, last_at, status, progress_json, updated_at) VALUES(?,?,?,?,?,?,?)

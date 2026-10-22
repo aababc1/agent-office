@@ -42,7 +42,7 @@ Install App → 계정 선택 → **Only select repositories** → data repo들.
 Cloudflare 대시보드 → Storage & Databases → D1 → Create → 이름 `agent-office`. 생성된 **Database ID**를 `worker/wrangler.toml`의 `database_id`에 넣고 커밋. 스키마는 `worker/migrations/*.sql`(순서대로):
 
 - 로컬에 wrangler가 있으면 `cd worker && npx wrangler d1 migrations apply agent-office --remote`
-- 없으면 D1 콘솔(대시보드의 Console 탭)에 `0001_init.sql`, `0002_discussions.sql` 내용을 차례로 붙여 넣고 실행
+- 없으면 D1 콘솔(대시보드의 Console 탭)에 `0001_init.sql`, `0002_discussions.sql`, `0003_plan.sql` 내용을 차례로 붙여 넣고 실행
 
 ## 3. Worker 배포 (GitHub 연동, 토큰 없이)
 

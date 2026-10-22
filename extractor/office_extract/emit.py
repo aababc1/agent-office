@@ -76,10 +76,10 @@ class RunStore:
         except (OSError, json.JSONDecodeError):
             summary = {"v": 1, "name": self.project, "sessions": {"total": 0, "active": 0, "latest": None}, "alerts": []}
         st = self.state["stages"]
-        done = sum(s.get("done", 0) for s in st.values()); total = sum(s.get("total", 0) for s in st.values())
+        done = sum((s.get("done") or 0) for s in st.values() if s.get("total")); total = sum((s.get("total") or 0) for s in st.values())
         summary["pipeline"] = {"run": self.run_id, "status": self.state["status"], "lastAt": self.state["lastAt"],
                                "done": done, "total": total, "ratio": round(done / total, 3) if total else None,
-                               "stages": {k: {"done": v.get("done", 0), "total": v.get("total", 0), "etaMin": v.get("etaMin")} for k, v in st.items()},
+                               "stages": {k: {"done": v.get("done") or 0, "total": v.get("total"), "etaMin": v.get("etaMin"), "eta": v.get("eta")} for k, v in st.items()},
                                "running": sum(1 for j in self.state["jobs"].values() if j.get("status") == "running"),
                                "failed": self.state["counters"]["failed"]}
         summary["emitterAt"] = iso()

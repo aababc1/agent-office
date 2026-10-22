@@ -248,12 +248,25 @@ def expand_vars(s: str, env: dict[str, str]) -> str:
     return re.sub(r"\$\{(\w+)\}|\$(\w+)", rep, s)
 
 
-def resolved_paths(plan: dict[str, Any]) -> dict[str, str]:
-    """Resolve `paths:` in order so later entries may use earlier ones (like 00_env.sh)."""
+def resolved_paths(plan: dict[str, Any], site: str | None = None) -> dict[str, str]:
+    """Resolve `paths:` in order so later entries may use earlier ones (like 00_env.sh).
+    A site's own `paths` (plan.sites.<site>.paths) override the global ones, so the same plan works on
+    the lab server and on K-BDS with different roots."""
+    merged: dict[str, Any] = dict(plan.get("paths") or {})
+    if site:
+        merged.update(((plan.get("sites") or {}).get(site) or {}).get("paths") or {})
     out: dict[str, str] = {}
-    for k, v in (plan.get("paths") or {}).items():
+    for k, v in merged.items():
         out[k] = expand_vars(str(v), out)
     return out
+
+
+def stages_for_site(plan: dict[str, Any], site: str | None) -> list[dict[str, Any]]:
+    """Stages a probe on `site` is responsible for: those whose `where` matches (default = plan.where)."""
+    if not site:
+        return list(plan.get("stages") or [])
+    default = plan.get("where")
+    return [st for st in (plan.get("stages") or []) if (st.get("where") or default) == site]
 
 
 def main(argv: list[str] | None = None) -> int:

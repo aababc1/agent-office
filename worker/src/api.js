@@ -11,19 +11,40 @@ export async function me(request, env) {
   return withCookie(json({ login: session.login, avatar: session.avatar }), setCookie);
 }
 
+/** One project may have a probe per site (local, kbds, …). Merge their latest stage reports into one picture. */
+export async function mergedPipeline(env, name) {
+  const rows = (await env.DB.prepare("SELECT id, status, last_at, progress_json, updated_at FROM pipeline_runs WHERE project=? ORDER BY updated_at DESC LIMIT 10").bind(name).all()).results || [];
+  if (!rows.length) return null;
+  const stages = {}; let running = 0, failed = 0, lastAt = null, probedAt = null; const sites = [];
+  for (const r of rows) {
+    const p = r.progress_json ? JSON.parse(r.progress_json) : {};
+    sites.push({ id: r.id, site: p.site || r.id, probedAt: p.probedAt || r.updated_at, status: r.status, canSubmit: (p.cluster || {}).canSubmit ?? null });
+    for (const [k, v] of Object.entries(p.stages || {})) if (!stages[k] || (v.updatedAt || "") > (stages[k].updatedAt || "")) stages[k] = { ...v, site: p.site || r.id };
+    if (p.rollup) { running += p.rollup.running || 0; failed += p.rollup.failed || 0; }
+    if (p.lastAt && (!lastAt || p.lastAt > lastAt)) lastAt = p.lastAt;
+    if ((p.probedAt || r.updated_at) > (probedAt || "")) probedAt = p.probedAt || r.updated_at;
+  }
+  const total = Object.values(stages).reduce((a, s) => a + (s.total || 0), 0);
+  const done = Object.values(stages).reduce((a, s) => a + (s.total ? (s.done || 0) : 0), 0);
+  const etas = Object.values(stages).map(s => (s.eta && s.eta.hours) || 0);
+  return { run: rows[0].id, sites, status: running ? "running" : "idle", lastAt, probedAt, done, total, ratio: total ? Math.round(done / total * 1000) / 1000 : null,
+           running, failed, etaHours: etas.length ? Math.max(...etas) : null, stages };
+}
+
 export async function floors(request, env) {
   const { session, setCookie } = await getSession(request, env);
   if (!session) return withCookie(unauthorized(), setCookie);
-  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json, discussion_at, discussion_last FROM projects ORDER BY last_at DESC").all()).results || [];
+  const rows = (await env.DB.prepare("SELECT name, repo, description, status, last_at, emitter_at, summary_json, discussion_at, discussion_last, (plan_json IS NOT NULL) AS has_plan FROM projects ORDER BY last_at DESC").all()).results || [];
   const out = [];
   for (const r of rows) {
     const ok = await canRead(env, session, r.repo);
     if (!ok) { out.push({ name: r.name, locked: true }); continue; }
     const s = r.summary_json ? JSON.parse(r.summary_json) : {};
-    out.push({ name: r.name, repo: r.repo, description: r.description, lastAt: r.last_at, emitterAt: r.emitter_at,
+    const pipe = await mergedPipeline(env, r.name);
+    out.push({ name: r.name, repo: r.repo, description: r.description, lastAt: r.last_at || (pipe && pipe.lastAt) || null, emitterAt: r.emitter_at || (pipe && pipe.probedAt) || null,
                sessions: (s.sessions || {}).total || 0, active: (s.sessions || {}).active || 0,
-               latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: s.pipeline || null,
-               discussionAt: r.discussion_at || null, discussionLast: r.discussion_last ? JSON.parse(r.discussion_last) : null });
+               latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: pipe ? { run: pipe.run, status: pipe.status, lastAt: pipe.lastAt, done: pipe.done, total: pipe.total, ratio: pipe.ratio, running: pipe.running, failed: pipe.failed, etaHours: pipe.etaHours, sites: pipe.sites } : (s.pipeline || null),
+               discussionAt: r.discussion_at || null, discussionLast: r.discussion_last ? JSON.parse(r.discussion_last) : null, hasPlan: !!r.has_plan });
   }
   return withCookie(json({ floors: out }), setCookie);
 }
@@ -73,4 +94,17 @@ export async function discussions(request, env, name, number) {
     if (number == null) return withCookie(request.method === "POST" ? await disc.create(env, g.session, repo, body) : await disc.list(env, g.session, repo), g.setCookie);
     return withCookie(request.method === "POST" ? await disc.comment(env, g.session, repo, number, body) : await disc.one(env, g.session, repo, number), g.setCookie);
   } catch (e) { return withCookie(json({ error: e.message }, 502), g.setCookie); }
+}
+
+// ---- plan + pipeline (compute-site progress)
+export async function plan(request, env, name) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  const row = await env.DB.prepare("SELECT plan_json FROM projects WHERE name=?").bind(name).first();
+  return withCookie(json(row && row.plan_json ? JSON.parse(row.plan_json) : { project: name, stages: [] }), g.setCookie);
+}
+export async function pipeline(request, env, name) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  const rows = (await env.DB.prepare("SELECT id, status, started_at, last_at, progress_json, updated_at FROM pipeline_runs WHERE project=? ORDER BY last_at DESC LIMIT 10").bind(name).all()).results || [];
+  const runs = rows.map(r => ({ id: r.id, status: r.status, startedAt: r.started_at, lastAt: r.last_at, updatedAt: r.updated_at, ...(r.progress_json ? JSON.parse(r.progress_json) : {}) }));
+  return withCookie(json({ runs, merged: await mergedPipeline(env, name) }), g.setCookie);
 }

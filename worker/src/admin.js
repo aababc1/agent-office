@@ -35,7 +35,7 @@ export async function resync(request, env) {
   const repo = new URL(request.url).searchParams.get("repo") || `${env.GH_OWNER}/agent-office-data`;
   try {
     const paths = await repoTree(env, repo);
-    const wanted = paths.filter(p => p === "summary.json" || p === "project.json" || /^sessions\/[^/]+\.progress\.json$/.test(p) || /^sessions\/[^/]+\/events\.\d{3}\.jsonl$/.test(p));
+    const wanted = paths.filter(p => p === "summary.json" || p === "project.json" || p === "plan.json" || /^pipeline\/[^/]+\/progress\.json$/.test(p) || /^sessions\/[^/]+\.progress\.json$/.test(p) || /^sessions\/[^/]+\/events\.\d{3}\.jsonl$/.test(p));
     await processRepoPush(env, repo, "HEAD", wanted);
     const rows = (await env.DB.prepare("SELECT name, repo, last_at FROM projects").all()).results || [];
     return json({ ok: true, repo, files: wanted.length, projects: rows, sessions: (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions").first()).n, events: (await env.DB.prepare("SELECT COUNT(*) AS n FROM events").first()).n });
