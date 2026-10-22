@@ -313,3 +313,22 @@ def test_probe_without_slurm_or_trace(tmp_path, monkeypatch):
     assert rep["stages"]["x"]["done"] == 0 and rep["rollup"]["status"] == "empty"
     (tmp_path / "out.tsv").write_text("ok")
     assert probe(plan, "r")["stages"]["x"]["done"] == 1
+
+
+def test_probe_deliver_names_repo_and_sends_plan_once(tmp_path, monkeypatch):
+    """A floor is gated by read access to its data repo, so the probe must name it; the plan rides along on the first push only."""
+    import office_extract.probe as pr
+    monkeypatch.setenv("PATH", str(tmp_path))
+    plan = {"project": "p", "repo": "me/office-p", "paths": {"PROJ": str(tmp_path)},
+            "stages": [{"name": "x", "unit": "once", "done": {"kind": "file", "path": "$PROJ/out.tsv"}}]}
+    state = pr.to_pipeline_state(pr.probe(plan, "kbds"), "kbds")
+    sent = []
+    monkeypatch.setattr(pr, "post", lambda url, token, payload: sent.append(payload))
+    assert pr.deliver(state, ["https://w.example"], "tok", "p", plan, send_plan=True) == 0
+    assert sent[0]["repo"] == "me/office-p" and sent[0]["plan"]["stages"][0]["name"] == "x" and sent[0]["summary"]["name"] == "p"
+    assert pr.deliver(state, ["https://w.example"], "tok", "p", plan, send_plan=False) == 0
+    assert "plan" not in sent[1] and sent[1]["repo"] == "me/office-p"
+    # file target: plan.json lands next to pipeline/<run>/progress.json for the webhook path
+    out = tmp_path / "data"
+    assert pr.deliver(state, [str(out)], None, "p", plan, send_plan=True) == 0
+    assert json.load(open(out / "plan.json"))["repo"] == "me/office-p" and (out / "pipeline" / "kbds" / "progress.json").exists()

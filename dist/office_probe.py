@@ -896,8 +896,12 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
             "unplanned": report.get("unplanned"), "probedAt": report["at"]}
 
 
-def deliver(state: dict[str, Any], targets: list[str], token: str | None, project: str) -> int:
+def deliver(state: dict[str, Any], targets: list[str], token: str | None, project: str,
+            plan: dict[str, Any] | None = None, send_plan: bool = False) -> int:
+    """Send one probe result. `plan` names the floor's data repo (membership check) and, with send_plan,
+    carries the plan itself so stage descriptions show without a separate plan.json push."""
     rc = 0
+    repo = (plan or {}).get("repo")
     for t in targets:
         if t.startswith("http"):
             try:
@@ -907,7 +911,12 @@ def deliver(state: dict[str, Any], targets: list[str], token: str | None, projec
                                         "running": state["rollup"]["running"], "failed": state["rollup"]["failed"], "canSubmit": (state.get("cluster") or {}).get("canSubmit")}}
                 if not token:
                     sys.stderr.write("office-probe: OFFICE_TOKEN required for a Worker target\n"); rc = 2; continue
-                post(t, token, {"project": project, "pipeline": state, "summary": summary})
+                payload: dict[str, Any] = {"project": project, "pipeline": state, "summary": summary}
+                if repo:
+                    payload["repo"] = repo                      # the Worker gates the floor by read access to this repo
+                if send_plan and plan:
+                    payload["plan"] = plan
+                post(t, token, payload)
             except Exception as e:  # noqa: BLE001 — keep the loop alive on a login node
                 sys.stderr.write(f"office-probe: post failed ({e}); spooling locally\n"); rc = 1
                 spool = os.path.join(os.path.expanduser("~"), ".agent-office", "spool"); os.makedirs(spool, exist_ok=True)
@@ -915,6 +924,9 @@ def deliver(state: dict[str, Any], targets: list[str], token: str | None, projec
                     json.dump(state, f, ensure_ascii=False)
         else:
             store = RunStore(t, project, state["id"]); store.state = state; store.save()
+            if send_plan and plan:                              # webhook path picks plan.json up like the Worker does
+                with open(os.path.join(t, "plan.json"), "w", encoding="utf-8") as f:
+                    json.dump(plan, f, ensure_ascii=False, indent=1)
     return rc
 
 
@@ -933,6 +945,7 @@ def main_probe(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"office-probe: --site {a.site} is not in plan.sites ({', '.join((plan.get('sites') or {}).keys()) or 'none'})\n"); return 2
     run_id = a.run or a.site or "run"
     targets = a.to or ([os.environ["OFFICE_TO"]] if os.environ.get("OFFICE_TO") else [])
+    plan_sent_mtime = None                                      # the plan goes along on the first push and whenever plan.yaml changes
     while True:
         report = probe(plan, run_id, a.site)
         state = to_pipeline_state(report, run_id)
@@ -940,7 +953,19 @@ def main_probe(argv: list[str] | None = None) -> int:
             print(json.dumps({k: v for k, v in state.items() if k not in ("jobs",)}, ensure_ascii=False, indent=1)); return 0
         if not targets:
             sys.stderr.write("office-probe: --to DATA_DIR or --to https://…worker URL (or OFFICE_TO)\n"); return 2
-        rc = deliver(state, targets, a.token, plan["project"])
+        try:
+            plan_mtime = os.stat(a.plan).st_mtime
+        except OSError:
+            plan_mtime = None
+        send_plan = plan_mtime != plan_sent_mtime
+        if send_plan and plan_sent_mtime is not None:
+            try:
+                plan = load_plan(a.plan)                            # edited while the loop runs → pick it up
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"office-probe: plan reload failed ({e}); keeping the previous plan\n"); send_plan = False
+        rc = deliver(state, targets, a.token, plan["project"], plan, send_plan)
+        if send_plan and rc == 0:
+            plan_sent_mtime = plan_mtime
         r = report["rollup"]
         sys.stderr.write(f"[probe] {plan['project']}@{a.site or '-'} {report['at']} done {r['done']}/{r['total']} failed {r['failed']} running {r['running']} canSubmit={(report.get('cluster') or {}).get('canSubmit')} rc={rc}\n")
         if a.mode == "once":

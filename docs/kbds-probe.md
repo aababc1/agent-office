@@ -3,12 +3,20 @@
 K-BDS 로그인 노드에는 아무것도 설치하지 않는다. 파일 두 개를 올리고 python3(miniconda base)로 돌린다.
 프로브는 **로그와 파일 존재만 읽는다** — Nextflow `trace.txt`·`.nextflow.log`·`work/`, 런북식 산출물 마커, `squeue`, `sinfo`. stat()과 로그 읽기뿐이라 로그인 노드 제한에 걸리지 않는다.
 
-## 1. 올리기 (Mac에서)
+## 1. 올리기
 
+Mac에서 scp로:
 ```bash
-scp dist/office_probe.py examples/metaCRC/plan.yaml examples/metaCRC/02_prefetch_kbds.sh k260a01@kbds.kisti.re.kr:~/office/
+scp -O dist/office_probe.py examples/metaCRC/plan.yaml examples/metaCRC/02_prefetch_kbds.sh k260a01@kbds.kisti.re.kr:~/office/
 ```
-(`dist/office_probe.py`는 `python3 extractor/build_probe_bundle.py`로 만든 단일 파일. 의존성 없음.)
+K-BDS에서 바깥 HTTPS가 되면 GitHub에서 바로(이 repo는 public):
+```bash
+mkdir -p ~/office && cd ~/office
+curl -sSLO https://raw.githubusercontent.com/aababc1/agent-office/main/dist/office_probe.py
+```
+(`dist/office_probe.py`는 `python3 extractor/build_probe_bundle.py`로 만든 단일 파일. 의존성 없음. 갱신도 같은 curl 한 줄.)
+
+프로브는 매 전송에 plan의 `repo`를 같이 보내고, 첫 전송과 `plan.yaml`이 바뀔 때마다 plan 전체를 보낸다. 그래서 **data repo(`repo:`에 적은 것)가 GitHub에 있고 App이 설치돼 있어야** 그 층이 보인다 — Worker는 "이 사람이 그 repo를 읽을 수 있나"로 층을 열고, repo가 없으면 🔒로 남는다. plan.json을 따로 push할 필요는 없다.
 
 ## 2. plan.yaml 맞추기 (K-BDS에서 한 번)
 
