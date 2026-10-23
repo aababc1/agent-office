@@ -18,7 +18,7 @@ case "${1:-}" in
 env)
 cat > 00_env_local.sh <<'ENV'
 # ── K-BDS paths (edit; same as the runbook's 00_env.sh) ────────
-export PROJ=/scratch/$USER/metaCRC
+export PROJ=$HOME/metaCRC                 # /home01 (Lustre, no quota) — the K-BDS guide keeps user work under home
 export MANIFEST=$PROJ/manifest/run_manifest.tsv
 export RUNLIST=$PROJ/manifest/runs_paired.txt # PAIRED only (8,420); SINGLE excluded (runs_single_excluded.txt)
 export SRA_DIR=$PROJ/sra                       # prefetch output (.sra; 03_dump deletes it after a good dump)

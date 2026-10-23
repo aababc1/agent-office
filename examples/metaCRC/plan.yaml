@@ -23,7 +23,7 @@ sites:
     slurm_user: k260a01
     partitions: [cpu64-only, cpu64-only-m512GB, cpu32-only]   # the ones this project submits to (sinfo is read for these)
     paths:
-      PROJ: /scratch/$USER/metaCRC
+      PROJ: $HOME/metaCRC               # /home01 is Lustre (no quota); the guide keeps user work under home
 pipeline:
   kind: nextflow                        # metaFun on the Slurm executor
   trace: $PROJ/run/trace.txt            # nextflow run ... -with-trace $PROJ/run/trace.txt   (one line per finished task)
@@ -34,7 +34,7 @@ pipeline:
 
 # Same variables as 00_env.sh. $USER comes from the environment on the probe host.
 paths:
-  PROJ: /scratch/$USER/metaCRC
+  PROJ: $HOME/metaCRC
   MANIFEST: $PROJ/manifest/run_manifest.tsv
   RUNLIST: $PROJ/manifest/runs_paired.txt   # PAIRED only (8,420). runs_all.txt (10,481) kept for reference
   MULTI: $PROJ/manifest/samples_multirun.txt
