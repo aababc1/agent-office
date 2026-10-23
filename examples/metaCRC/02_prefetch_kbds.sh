@@ -56,7 +56,7 @@ if [ "$1" = retry ]; then
 fi
 fetch_one() {
   local RUN="$1" SRA="$SRA_DIR/$1/$1.sra"
-  [ -s "$SRA_DIR/$RUN/.validated" ] && return 0                       # already done (resume-safe)
+  [ -f "$SRA_DIR/$RUN/.validated" ] && return 0                       # already done (resume-safe)
   # disk guard: wait while free space is below the floor
   while [ "$(df -BG --output=avail "$SRA_DIR" | tail -1 | tr -dc 0-9)" -lt "$MIN_FREE_GB" ]; do
     echo "$(date -u +%FT%TZ) $RUN waiting: free < ${MIN_FREE_GB}G" >> "$LOG_DIR/prefetch.disk.log"; sleep 300

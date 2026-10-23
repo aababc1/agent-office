@@ -333,3 +333,21 @@ def test_probe_deliver_names_repo_and_sends_plan_once(tmp_path, monkeypatch):
     out = tmp_path / "data"
     assert pr.deliver(state, [str(out)], None, "p", plan, send_plan=True) == 0
     assert json.load(open(out / "plan.json"))["repo"] == "me/office-p" and (out / "pipeline" / "kbds" / "progress.json").exists()
+
+
+def test_probe_groups_cohort_paths_and_counts(tmp_path, monkeypatch):
+    """plan.groups maps run→cohort from the manifest: {cohort} in marker paths resolves, and every unit stage gets per-cohort counts."""
+    from office_extract.probe import probe, to_pipeline_state
+    monkeypatch.setenv("PATH", str(tmp_path))
+    d = tmp_path; (d / "manifest").mkdir(); (d / "fastq" / "PRJA").mkdir(parents=True); (d / "fastq" / "PRJB").mkdir(); (d / "logs").mkdir()
+    (d / "manifest" / "run_manifest.tsv").write_text("run_accession\tsample_accession\tcohort_accession\nR1\tS1\tPRJA\nR2\tS1\tPRJA\nR3\tS3\tPRJB\n")
+    (d / "manifest" / "runs.txt").write_text("R1\nR2\nR3\n")
+    (d / "fastq" / "PRJA" / "R1_1.fastq.gz").write_text("x"); (d / "fastq" / "PRJB" / "R3_1.fastq.gz").write_text("x")
+    (d / "logs" / "dump.FAILED").write_text("R2 DUMP_FAIL\n")
+    plan = {"project": "t", "paths": {"PROJ": str(d), "MANIFEST": "$PROJ/manifest/run_manifest.tsv", "FQ_DIR": "$PROJ/fastq", "LOG_DIR": "$PROJ/logs"},
+            "groups": {"file": "$MANIFEST", "columns": {"run": "run_accession", "sample": "sample_accession", "cohort": "cohort_accession"}},
+            "stages": [{"name": "dump", "unit": "run", "units": {"file": "$PROJ/manifest/runs.txt"}, "done": {"kind": "file", "path": "$FQ_DIR/{cohort}/{run}_1.fastq.gz"}, "failed": {"log": "$LOG_DIR/dump.FAILED"}}]}
+    r = probe(plan, "t"); st = r["stages"]["dump"]
+    assert st["done"] == 2 and st["total"] == 3 and st["failed"] == {"R2": "DUMP_FAIL"}
+    assert st["groups"] == {"PRJA": {"total": 2, "done": 1, "failed": 1}, "PRJB": {"total": 1, "done": 1, "failed": 0}} and r["cohorts"] == ["PRJA", "PRJB"]
+    s = to_pipeline_state(r, "t"); assert s["stages"]["dump"]["groups"]["PRJA"]["done"] == 1 and s["cohorts"] == ["PRJA", "PRJB"]

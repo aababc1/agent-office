@@ -59,6 +59,30 @@ python3 office_probe.py once --plan plan.yaml --site kbds --to ~/office/out     
 
 샘플·런 id는 K-BDS 밖으로 나가지 않는다. 개수와 실패 사유만 나간다(실패 사유 줄에는 런 id가 포함됨 — 공개 accession이라 괜찮다고 보지만, 가리려면 `failed:` 블록을 지우면 된다).
 
-## 5. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
+## 5. 코호트(BioProject) 단위 진행 — `groups:` (2026-10-23)
+
+plan.yaml의 `groups: {file: $MANIFEST, columns: {run: run_accession, sample: sample_accession, cohort: cohort_accession}}` 한 블록으로
+런·샘플 단위 모든 단계에 **코호트별 done/total/failed**가 붙는다(뷰어의 코호트 보드). 파일 이름을 파싱하지 않는다 — manifest가 매핑이다.
+출력은 코호트 하위 폴더(`$FQ_DIR/<BioProject>/<run>_1.fastq.gz` 등)이고, 마커 경로의 `{cohort}`가 같은 매핑으로 풀린다.
+
+## 6. §03 dump — `03_dump_kbds.sh` (prefetch 끝난 런부터 바로)
+
+prefetch 전체를 기다리지 않는다. 로그인 노드 tmux에서 `feed`가 10분마다 "validated인데 fastq 없는 런"을 코호트 순으로 모아
+노드 잡(sbatch 1개 = 노드 1개, `xargs -P (cores/4)` × 4 thread)을 띄운다. 런 하나 = `fasterq-dump`(기본 split-3) → `pigz -p 4` → `gzip -t`
+→ `_2` 먼저, `_1` 마지막에 mv(= 완료 마커) → `$SRA_DIR/<run>` 삭제. 실패는 `dump.FAILED`에 `NOT_VALIDATED|NO_SRA|DUMP_FAIL`.
+임시 파일은 `$PROJ/tmp/<run>`(home 밑), 끝나면 삭제.
+
+```bash
+conda install -n sra-tools -c conda-forge pigz -y        # 한 번
+./03_dump_kbds.sh pending                                # 코호트별 대기 런 수
+DUMP_CHUNK=16 ./03_dump_kbds.sh submit 1                 # 첫 잡은 작게: 노드 1개 · 16런으로 동작 확인
+./03_dump_kbds.sh status                                 # dumped/validated-waiting/failed, 잡, 시간당 처리량, 코호트별 ✓
+tmux new -s dump -d 'cd ~/office && ./03_dump_kbds.sh feed 2>&1 | tee -a ~/metaCRC/logs/dump.feed.log'   # 상시
+./03_dump_kbds.sh retry                                  # FAILED 비우고 다시 대기열로
+```
+손잡이(00_env_local.sh에 export): `DUMP_PART`(기본 cpu32-only, 0.5 노드시간/h) · `DUMP_MAX_NODES`(5) · `DUMP_CHUNK`(160런/잡) · `DUMP_MIN_BATCH`(16) · `DUMP_FEED_S`(600) · `DUMP_TIME`(24:00:00).
+죽은 잡의 청크는 다음 `feed`에서 자동으로 대기열로 돌아온다(끝난 런은 파일이 있으니 건너뜀).
+
+## 7. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
 
 `runs_paired.txt`(8,420, PAIRED만)가 모든 런 단위 단계의 목록이다. `runs_single_excluded.txt`에 빠진 2,061개를 남겨 둔다. 런북의 03_dump 이후 sbatch 스크립트도 `RUNLIST`를 `runs_paired.txt`로 바꿔야 한다(00_env.sh 한 줄).

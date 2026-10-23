@@ -669,7 +669,36 @@ def _units(path: str) -> list[str]:
     return [l.strip() for l in _read_lines(path) if l.strip() and not l.startswith("#")]
 
 
-def stage_markers(st: dict[str, Any], paths: dict[str, str], now: float) -> dict[str, Any]:
+def load_groups(plan: dict[str, Any], paths: dict[str, str]) -> dict[str, dict[str, str]]:
+    """plan.groups = {file: $MANIFEST, columns: {run: run_accession, sample: sample_accession, cohort: cohort_accession}}
+    → {"run": {run: cohort}, "sample": {sample: cohort}}. A TSV with a header; nothing is parsed out of file names."""
+    g = plan.get("groups") or {}
+    if not g.get("file"):
+        return {}
+    cols = g.get("columns") or {}
+    gcol = cols.get("cohort") or cols.get("group") or "cohort"
+    lines = _read_lines(expand_vars(str(g["file"]), paths))
+    if not lines:
+        return {}
+    header = lines[0].rstrip("\n").split("\t")
+    try:
+        gi = header.index(gcol)
+    except ValueError:
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for kind in ("run", "sample"):
+        col = cols.get(kind)
+        if col and col in header:
+            ci = header.index(col); m: dict[str, str] = {}
+            for l in lines[1:]:
+                f = l.rstrip("\n").split("\t")
+                if len(f) > max(ci, gi) and f[ci]:
+                    m[f[ci]] = f[gi]
+            out[kind] = m
+    return out
+
+
+def stage_markers(st: dict[str, Any], paths: dict[str, str], now: float, groups: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
     done = st.get("done") or {}
     kind = done.get("kind", "file")
     res: dict[str, Any] = {"name": st["name"], "unit": st["unit"], "kind": kind}
@@ -689,10 +718,16 @@ def stage_markers(st: dict[str, Any], paths: dict[str, str], now: float) -> dict
         return res
     key = "{run}" if st["unit"] == "run" else "{sample}"
     tmpl = expand_vars(done.get("path", ""), paths)
+    gmap = (groups or {}).get(st["unit"]) or {}
+    if "{cohort}" in tmpl and not gmap:
+        res.update(total=len(units), done=0, note="path uses {cohort} but plan.groups gives no mapping")
+        return res
     check = os.path.isdir if kind == "dir" else os.path.isfile
     done_at: list[float] = []; done_ids: list[str] = []
     for u in units:
         p = tmpl.replace(key, u)
+        if "{cohort}" in p:
+            p = p.replace("{cohort}", gmap.get(u, "_"))
         if check(p):
             done_ids.append(u)
             try:
@@ -707,6 +742,16 @@ def stage_markers(st: dict[str, Any], paths: dict[str, str], now: float) -> dict
             if parts and parts[0] not in done_ids:
                 failed[parts[0]] = " ".join(parts[1:]) or "FAILED"
     res.update(total=len(units), done=len(done_ids), doneIds=done_ids, failed=failed, doneAt=done_at)
+    if gmap:   # per-cohort counts: the viewer's 코호트 보드 and "run the next step for finished cohorts"
+        per: dict[str, dict[str, int]] = {}
+        for u in units:
+            c = gmap.get(u, "_"); per.setdefault(c, {"total": 0, "done": 0, "failed": 0})["total"] += 1
+        dset = set(done_ids)
+        for u in units:
+            c = gmap.get(u, "_")
+            if u in dset: per[c]["done"] += 1
+            elif u in failed: per[c]["failed"] += 1
+        res["groups"] = per
     return res
 
 
@@ -801,6 +846,8 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                           "inflight": inflight[:100], "inflightByProcess": inflight_by_proc, "log": nflog or None}
 
     # 2) plan stages: markers first, nextflow mapping second, "implied by later stage" last
+    groups = load_groups(plan, paths)
+    report["cohorts"] = sorted({c for m in groups.values() for c in m.values()}) if groups else []
     mapped_procs: set[str] = set()
     for st in my_stages:
         name = st["name"]; done = st.get("done") or {}
@@ -825,8 +872,9 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                      taskS=rt[0] if len(rt) == 1 else ({"p50": _pct([x["p50"] for x in rt if x["p50"]], .5)} if rt else None))
             done_at = [r["_complete"] for r in rows if r["_process"] in pnames and r["_status"] == "COMPLETED" and r["_complete"]]
         else:
-            m = stage_markers(st, paths, now)
+            m = stage_markers(st, paths, now, groups)
             s.update(source=m.get("kind"), total=m.get("total"), done=m.get("done", 0), failed=m.get("failed", {}), note=m.get("note"))
+            if m.get("groups"): s["groups"] = m["groups"]
             done_at = m.get("doneAt", [])
             s["doneIds"] = m.get("doneIds")
             s["lastAt"] = iso(max(done_at)) if done_at else None
@@ -848,6 +896,12 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
             a, b = stages[st["name"]], stages[imp]
             if a.get("doneIds") is not None and b.get("doneIds"):
                 merged = set(a["doneIds"]) | set(b["doneIds"]); a["done"] = len(merged); a["doneIds"] = sorted(merged)
+                gm = groups.get(st["unit"]) or {}
+                if a.get("groups") and gm:
+                    for c in a["groups"].values(): c["done"] = 0
+                    for u in merged:
+                        c = gm.get(u, "_")
+                        if c in a["groups"]: a["groups"][c]["done"] += 1
                 a["failed"] = {k: v for k, v in (a.get("failed") or {}).items() if k not in merged}
                 if a.get("total"):
                     a["remaining"] = a["total"] - a["done"] - len(a["failed"]); a["ratio"] = round(a["done"] / a["total"], 4)
@@ -892,7 +946,7 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
         st[name] = {"done": s.get("done", 0), "total": s.get("total"), "unit": s.get("unit"), "failed": len(s.get("failed") or {}),
                     "running": s.get("running", 0), "pending": s.get("pending", 0), "ratio": s.get("ratio"), "eta": s.get("eta"),
                     "rates": s.get("rates"), "lastAt": s.get("lastAt"), "desc": s.get("desc"), "after": s.get("after"),
-                    "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"]}
+                    "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"], "groups": s.get("groups")}
     jobs = {}
     for name, s in report["stages"].items():
         for unit, reason in list((s.get("failed") or {}).items())[:200]:
@@ -903,7 +957,7 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
     return {"v": 1, "id": run_id, "project": report["project"], "site": report.get("site"), "siteKey": report.get("siteKey"), "startedAt": None, "lastAt": r.get("lastAt") or report["at"],
             "status": r["status"], "stages": st, "jobs": jobs, "notes": [], "counters": {"done": r["done"], "failed": r["failed"]},
             "rollup": r, "cluster": report.get("cluster"), "nextflow": {k: v for k, v in (report.get("nextflow") or {}).items() if k != "inflight"},
-            "unplanned": report.get("unplanned"), "probedAt": report["at"]}
+            "unplanned": report.get("unplanned"), "probedAt": report["at"], "cohorts": report.get("cohorts") or []}
 
 
 def deliver(state: dict[str, Any], targets: list[str], token: str | None, project: str,

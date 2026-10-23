@@ -214,7 +214,7 @@ select.btn{padding:4px 6px}
 .ms .bar{grid-column:1/-1;height:6px;background:rgba(255,255,255,.15);border-radius:999px;margin:2px 0 0;overflow:hidden} .ms .bar i{display:block;height:100%;background:#5eead4}
 .ms .more{grid-column:1/-1;display:flex;gap:6px 14px;flex-wrap:wrap;font-size:11px;opacity:.85} .ms .more b{font-family:var(--mono);font-weight:600}
 .ms.none{display:block;font-size:11px;opacity:.9}
-.tl{position:relative;height:34px;margin:4px 2px 0}
+.tl{position:relative;height:58px;margin:4px 2px 0}
 .tl .ax{position:absolute;left:0;right:0;top:14px;height:2px;background:var(--line-strong)}
 .tl .tick{position:absolute;top:9px;width:2px;height:12px;background:var(--line-strong)} .tl .tick.today{background:var(--accent);height:16px;top:7px}
 .tl .lab{position:absolute;top:22px;font-size:9px;color:var(--muted);transform:translateX(-50%);white-space:nowrap;font-family:var(--mono)}
@@ -266,6 +266,15 @@ select.btn{padding:4px 6px}
 @media (max-width:760px){.pt .nd{width:9px;height:16px} .racks{gap:8px}}
 .hall .note2{font-size:10px;color:var(--muted)}
 .pt .mini{display:none}
+/* 코호트 보드 (per-BioProject progress across the unit stages) */
+.cb{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+.cb .cbh{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none} .cb .cbh b{color:var(--ink)} .cb .cbh .tg{margin-left:auto;font-size:10px}
+.cbt{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:6px;display:none} .cb.open .cbt{display:table}
+.cbt th{font-weight:600;color:var(--muted);text-align:left;padding:2px 6px 4px;font-size:9.5px;letter-spacing:.03em;white-space:nowrap} .cbt th.c{text-align:center}
+.cbt td{padding:2px 6px;border-top:1px solid var(--line);white-space:nowrap} .cbt td.n{font-family:var(--mono);color:var(--muted)} .cbt td.c{text-align:center}
+.cbt .cbar{display:inline-block;width:46px;height:7px;background:var(--paper);border:1px solid var(--line);border-radius:3px;vertical-align:middle;overflow:hidden;position:relative} .cbt .cbar i{display:block;height:100%;background:var(--accent)} .cbt .cbar i.f{position:absolute;right:0;top:0;background:var(--bad)}
+.cbt .ok{color:var(--accent);font-weight:700} .cbt .nm{font-weight:600;font-family:var(--mono)} .cbt tr.done td{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+@media (max-width:760px){.cbt{font-size:9.5px} .cbt .cbar{width:30px} .cbt td,.cbt th{padding:2px 3px}}
 /* phone: the whole factory in one screen — small machines, chips for nodes, icon tiles upstairs, detail on tap */
 @media (max-width:760px){
   .pipe .big .pct{font-size:22px} .pipe .big .pct small{font-size:10px;margin-left:5px}
@@ -1081,7 +1090,8 @@ function renderPipeline() {
     const XP = t => `${Math.max(0, Math.min(100, (t - t0) / (t1 - t0) * 100))}%`;
     const xn = XP(Date.now());
     if (window.innerWidth > 760) html += `<div class="tl"><div class="ax"></div><div class="tick today" style="left:${xn}"></div><div class="lab" style="left:${xn};${parseFloat(xn) < 6 ? 'transform:none' : ''}">오늘</div>
-      ${ms.filter(m => m.date).map(m => { const x = XP(Date.parse(m.date)); const end = parseFloat(x) > 88; return `<div class="tick" style="left:${x}"></div><div class="flag ${m.status === 'late' ? 'late' : m.complete || m.status === 'ok' ? 'ok' : ''}" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${m.complete ? '✓' : '🏁'} ${esc(m.name)}</div><div class="lab" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${fmtMD(m.date)}</div>`; }).join('')}
+      ${(() => { let prev = -100, row = 0; return ms.filter(m => m.date).sort((a, b) => Date.parse(a.date) - Date.parse(b.date)).map(m => { const xv = parseFloat(XP(Date.parse(m.date))); row = xv - prev < 14 ? (row + 1) % 2 : 0; prev = xv; const x = `${xv}%`; const end = xv > 88;
+        return `<div class="tick" style="left:${x}"></div><div class="flag ${m.status === 'late' ? 'late' : m.complete || m.status === 'ok' ? 'ok' : ''}" style="left:${x};top:${row ? 46 : 0}px;${end ? 'transform:translateX(-100%)' : ''}">${m.complete ? '✓' : '🏁'} ${esc(m.name)}</div><div class="lab" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${fmtMD(m.date)}</div>`; }).join(''); })()}
       ${ms.filter(m => m.eta && !m.complete).map(m => `<div class="eta" style="left:${XP(Date.parse(m.eta))}" title="${esc(m.name)} 예상 완료 ${fmtMD(m.eta)}"></div>`).join('')}</div>`;
   } else html += `<div class="ms none">🏁 마일스톤 미설정 — plan.yaml의 <code>milestones</code>에 날짜와 필요한 단계를 적으면 D-day와 ETA 비교가 여기 뜹니다.</div>`;
   // ---- 2F 생산 라인
@@ -1095,7 +1105,20 @@ function renderPipeline() {
       <div class="led">${i.total != null ? `${i.done.toLocaleString()}<span class="sp"> / </span><span class="sl">/</span>${i.total.toLocaleString()} <span class="u">${esc(i.unit)}</span>` : (i.done ? `${i.done} <span class="u">${esc(i.unit)}</span>` : '— / —')}</div>
       <div class="gl">${g({...i, ratio})}</div><div class="st">${status}</div>
       <div class="pb"><i class="d" style="width:${ratio * 100}%"></i><i class="r" style="width:${i.total ? Math.min(100 - ratio * 100, i.running / i.total * 100) : 0}%"></i><i class="f" style="width:${i.total ? Math.min(100 - ratio * 100, i.failed / i.total * 100) : 0}%"></i></div></div>`; });
-  html += `</div><div class="belt ${roll && roll.running ? 'on' : ''}"></div><div class="belt-l">${rate ? `벨트 ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} /h →` : '벨트 정지'}</div><div class="sdetail" id="sdetail"></div></div>`;
+  html += `</div><div class="belt ${roll && roll.running ? 'on' : ''}"></div><div class="belt-l">${rate ? `벨트 ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} /h →` : '벨트 정지'}</div><div class="sdetail" id="sdetail"></div>`;
+  // ---- 코호트 보드: per-BioProject progress on every stage the probe grouped (plan.groups)
+  const gStages = order.filter(n => info[n].st.groups); const cohorts = [...new Set(gStages.flatMap(n => Object.keys(info[n].st.groups)))].filter(c => c !== '_');
+  if (cohorts.length) {
+    const rowsC = cohorts.map(c => { const cells = gStages.map(n => { const g = info[n].st.groups[c] || {total: 0, done: 0, failed: 0}; return {n, ...g, ok: g.total > 0 && g.done >= g.total}; });
+      const nOk = cells.filter(x => x.ok).length; const first = cells.find(x => x.total) || {total: 0}; const prog = cells.reduce((a, x) => a + (x.total ? x.done / x.total : 0), 0) / Math.max(1, cells.filter(x => x.total).length);
+      return {c, cells, nOk, runs: first.total, prog, allOk: cells.filter(x => x.total).every(x => x.ok)}; }).sort((a, b) => b.prog - a.prog || b.runs - a.runs);
+    const nDone = rowsC.filter(r => r.allOk).length; const firstStage = gStages[0];
+    const nFirst = rowsC.filter(r => (r.cells[0] || {}).ok).length;
+    html += `<div class="cb ${window.innerWidth > 760 ? 'open' : ''}" id="cb"><div class="cbh" id="cbh">🧬 코호트 보드 <b>${cohorts.length}</b>개 BioProject · ${esc(firstStage)} 끝난 코호트 <b>${nFirst}</b> · 전 단계 완료 <b>${nDone}</b><span class="tg">${window.innerWidth > 760 ? '▾' : '▸ 펼치기'}</span></div>
+      <table class="cbt"><thead><tr><th>BioProject</th><th>런</th>${gStages.map(n => `<th class="c">${esc(n)}</th>`).join('')}<th class="c">완료</th></tr></thead><tbody>
+      ${rowsC.map(r => `<tr class="${r.allOk ? 'done' : ''}"><td class="nm">${esc(r.c)}</td><td class="n">${r.runs.toLocaleString()}</td>${r.cells.map(x => `<td class="c" title="${esc(x.n)} ${x.done}/${x.total}${x.failed ? ` · 실패 ${x.failed}` : ''}">${x.total ? (x.ok ? '<span class="ok">✓</span>' : `<span class="cbar"><i style="width:${x.done / x.total * 100}%"></i>${x.failed ? `<i class="f" style="width:${Math.min(100, x.failed / x.total * 100)}%"></i>` : ''}</span> <span class="n">${Math.round(x.done / x.total * 100)}%</span>`) : '<span class="n">—</span>'}</td>`).join('')}<td class="c">${r.nOk}/${r.cells.filter(x => x.total).length}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  html += `</div>`;
   // ---- 1F 계산실
   const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo));
   if (runsWithCluster.length) {
@@ -1129,6 +1152,7 @@ function renderPipeline() {
       ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; };
   detail();
   el.querySelectorAll('.mc').forEach(g => { const go = () => { const box = $('sdetail'); if (PV.sel === g.dataset.n && box) box.classList.toggle('open'); else if (box) box.classList.add('open'); PV.sel = g.dataset.n; el.querySelectorAll('.mc').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+  const cbh = $('cbh'); if (cbh) cbh.onclick = () => { const b = $('cb'); b.classList.toggle('open'); cbh.querySelector('.tg').textContent = b.classList.contains('open') ? '▾' : '▸ 펼치기'; };
   el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && getComputedStyle(b).display !== 'none') b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) card.scrollIntoView({behavior: 'smooth', block: 'start'}); } }; });
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }

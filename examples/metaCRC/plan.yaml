@@ -47,8 +47,15 @@ paths:
   BIN_DIR: $PROJ/bins
   MAG_DIR: $PROJ/mag_qc
   LOG_DIR: $PROJ/logs
+  TMP_DIR: $PROJ/tmp                        # fasterq-dump scratch (everything stays under home; cleaned per run)
 
-# Facts from the manifest (2026-10-22): 10,481 runs / 9,656 samples / 27 cohorts;
+# run → sample → BioProject, straight from the manifest (no file-name parsing). Gives every unit stage per-cohort counts
+# (the viewer's 코호트 보드, and "run the next step for cohorts that are complete") and resolves {cohort} in paths below.
+groups:
+  file: $MANIFEST
+  columns: {run: run_accession, sample: sample_accession, cohort: cohort_accession}
+
+# Facts from the manifest (2026-10-22): 10,481 runs / 9,656 samples / 27 cohorts (25 with PAIRED runs; 7,595 PAIRED samples; .sra ≈ 25.5 TB);
 # PAIRED 8,420 · SINGLE 2,061; multirun PAIRED samples 322 (PRJEB6070 196 · PRJEB12449 110 · PRJEB27928 16);
 # 79 runs > 20 GB (.sra). Decision 2026-10-22: SINGLE runs (2,061) are excluded — runs_paired.txt (8,420) is
 # the run list for every per-run stage; runs_single_excluded.txt records what was left out.
@@ -77,9 +84,9 @@ stages:
     unit: run
     units: {file: $RUNLIST}
     after: [prefetch]
-    done: {kind: file, path: "$FQ_DIR/{run}_1.fastq.gz"}
+    done: {kind: file, path: "$FQ_DIR/{cohort}/{run}_1.fastq.gz"}   # _2 is written first, _1 last → _1 present = both present
     failed: {log: "$LOG_DIR/dump.FAILED"}                # NOT_VALIDATED | NO_SRA | DUMP_FAIL
-    runner: {kind: slurm, job: metacrc-dump, array: 1000, cpus: 8, mem: 24G, time_h: 12}
+    runner: {kind: slurm, job: metacrc-dump, nodes: 1, per_node: 8, threads: 4, time_h: 24}   # 03_dump_kbds.sh: 1 sbatch = 1 node, runs fed as prefetch finishes
 
   - name: qc
     desc: "fastp + host removal (04_qc.sbatch)"
@@ -87,7 +94,7 @@ stages:
     unit: run
     units: {file: $RUNLIST}
     after: [dump]
-    done: {kind: file, path: "$QC_DIR/{run}_1.fastq.gz"}
+    done: {kind: file, path: "$QC_DIR/{cohort}/{run}_1.fastq.gz"}
     failed: {log: "$LOG_DIR/qc.FAILED"}                  # NO_FASTQ | FASTP_FAIL
     runner: {kind: slurm, job: metacrc-qc, array: 1000, cpus: 8, mem: 32G, time_h: 8}
 
@@ -97,7 +104,7 @@ stages:
     unit: sample
     units: {file: $MULTI}
     after: [qc]
-    done: {kind: file, path: "$MRG_DIR/{sample}_R1.fastq.gz"}
+    done: {kind: file, path: "$MRG_DIR/{cohort}/{sample}_R1.fastq.gz"}
     failed: {log: "$LOG_DIR/merge.FAILED"}               # MISSING_<run> | PAIR_MISMATCH
     runner: {kind: slurm, job: metacrc-merge, array: 322, cpus: 4, mem: 8G, time_h: 4}
 
@@ -107,7 +114,7 @@ stages:
     unit: sample
     units: {file: $ASMLIST}
     after: [qc, merge]
-    done: {kind: file, path: "$ASM_DIR/{sample}/contigs.renamed.fa"}
+    done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}/contigs.renamed.fa"}
     failed: {log: "$LOG_DIR/asm.FAILED"}                 # NO_INPUT | MEGAHIT_FAIL
     runner: {kind: slurm, job: metacrc-asm, array: 200, cpus: 32, mem: 250G, time_h: 48}
 
@@ -117,7 +124,7 @@ stages:
     unit: sample
     units: {file: $ASMLIST}
     after: [assemble]
-    done: {kind: dir, path: "$BIN_DIR/{sample}/dastool_DASTool_bins"}
+    done: {kind: dir, path: "$BIN_DIR/{cohort}/{sample}/dastool_DASTool_bins"}
     failed: {log: "$LOG_DIR/bin.FAILED"}                 # DASTOOL_FAIL
     runner: {kind: slurm, job: metacrc-bin, array: 100, cpus: 16, mem: 120G, time_h: 24}
 
@@ -137,9 +144,12 @@ docs:
 
 # Milestones drive the deadline board (D-day vs the probe's ETA for the stages each one needs).
 # Dates are the project's own; fill them in. `stages` = what must be complete for the milestone to count.
-milestones: []
-#  - {name: "QC 완료 (8,420 run)", date: 2026-MM-DD, stages: [prefetch, dump, qc]}
-#  - {name: "조립·비닝 완료",       date: 2026-MM-DD, stages: [merge, assemble, bin]}
-#  - {name: "MAG 카탈로그",          date: 2026-MM-DD, stages: [mag_qc]}
+# Targets set 2026-10-23: everything within one month. Dates are the project's to change.
+milestones:
+  - {name: "prefetch 완료 (8,420 run)",  date: 2026-10-27, stages: [prefetch]}
+  - {name: "QC 완료 (25 코호트)",         date: 2026-11-02, stages: [dump, qc]}
+  - {name: "조립 완료 (7,595 샘플)",      date: 2026-11-16, stages: [merge, assemble]}
+  - {name: "비닝 완료",                   date: 2026-11-21, stages: [bin]}
+  - {name: "MAG 카탈로그 (전체 완료)",    date: 2026-11-23, stages: [mag_qc]}
 
 alerts: [job_failed, stage_done, heartbeat_lost_2h]
