@@ -1,7 +1,7 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, unauthorized } from "./auth.js";
 import { driveEnabled, driveListing } from "./gdrive.js";
-import { json } from "./util.js";
+import { json, timingSafeEqual } from "./util.js";
 import * as disc from "./discussions.js";
 
 const withCookie = (res, setCookie) => { if (!setCookie) return res; const r = new Response(res.body, res); r.headers.append("set-cookie", setCookie); return r; };
@@ -52,12 +52,20 @@ export async function floors(request, env) {
   return withCookie(json({ floors: out }), setCookie);
 }
 
+/** The per-project write token (PROJECT_TOKENS) may also read that one project — for scripts and the compute server itself. */
+function tokenSession(request, env, name) {
+  const auth = request.headers.get("authorization") || ""; const tok = auth.replace(/^Bearer\s+/i, "");
+  if (!tok) return null;
+  let tokens = {}; try { tokens = JSON.parse(env.PROJECT_TOKENS || "{}"); } catch { return null; }
+  return tokens[name] && timingSafeEqual(tok, tokens[name]) ? { login: `token:${name}`, token: true } : null;
+}
 async function gate(request, env, name) {
-  const { session, setCookie } = await getSession(request, env);
+  const t = tokenSession(request, env, name);
+  const { session, setCookie } = t ? { session: t, setCookie: null } : await getSession(request, env);
   if (!session) return { deny: withCookie(unauthorized(), setCookie) };
   const p = await env.DB.prepare("SELECT name, repo, description, last_at FROM projects WHERE name=?").bind(name).first();
   if (!p) return { deny: withCookie(json({ error: "no such project" }, 404), setCookie) };
-  if (!(await canRead(env, session, p.repo))) return { deny: withCookie(json({ error: "not a collaborator" }, 403), setCookie) };
+  if (!session.token && !(await canRead(env, session, p.repo))) return { deny: withCookie(json({ error: "not a collaborator" }, 403), setCookie) };
   return { session, setCookie, project: p };
 }
 
@@ -116,6 +124,7 @@ export async function docs(request, env, name) {
 // ---- discussions (GitHub Discussions on the data repo, with the person's own token)
 export async function discussions(request, env, name, number) {
   const g = await gate(request, env, name); if (g.deny) return g.deny;
+  if (g.session.token) return json({ error: "discussions need a GitHub login (they are read and written as you)" }, 403);
   const repo = g.project.repo; if (!repo) return withCookie(json({ error: "project has no repo" }, 409), g.setCookie);
   const body = request.method === "POST" ? await request.json().catch(() => null) : null;
   try {
