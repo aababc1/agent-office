@@ -19,6 +19,7 @@
 #   ./03_dump_kbds.sh node <chunk>       (what sbatch runs) xargs -P PER_NODE over the chunk's runs
 #   ./03_dump_kbds.sh one <run>          (one run; called by `node`)
 # Knobs (export in 00_env_local.sh or the environment): DUMP_MODE=cohort|stream DUMP_PART=cpu32-only DUMP_THREADS=4 DUMP_PER_NODE=(cores/threads)
+#   DUMP_OVERSUB=1.5 (runs per node = cores/threads × this; fasterq-dump waits on Lustre so 4 threads ≈ 1.5 busy cores)
 #   DUMP_PART may list several ("cpu32-only cpu64-only": each job takes the one with most idle nodes)  DUMP_CHUNK=160 (runs per node job) DUMP_MAX_NODES=5 DUMP_MIN_BATCH=16 DUMP_FEED_S=600 DUMP_TIME=24:00:00 DL_ENV=sra-tools
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -193,7 +194,8 @@ node)
   if ! command -v conda >/dev/null 2>&1; then for c in "${CONDA_ROOT:-}" "$HOME/miniconda3" "$HOME/anaconda3" /apps/application/miniconda3; do [ -n "$c" ] && [ -f "$c/etc/profile.d/conda.sh" ] && { source "$c/etc/profile.d/conda.sh"; break; }; done; fi
   eval "$(conda shell.bash hook)"; conda activate "$DL_ENV" || { echo "[node] conda env $DL_ENV not found"; exit 1; }
   command -v fasterq-dump >/dev/null || { echo "[node] fasterq-dump not on PATH"; exit 1; }
-  CORES=$(nproc); PER="${DUMP_PER_NODE:-$(( CORES / DUMP_THREADS ))}"; [ "$PER" -lt 1 ] && PER=1
+  # fasterq-dump on Lustre is I/O-bound (~1.5 of its 4 threads busy), so DUMP_OVERSUB (default 1.5) packs more runs per node
+  CORES=$(nproc); PER="${DUMP_PER_NODE:-$(awk -v c="$CORES" -v t="$DUMP_THREADS" -v o="${DUMP_OVERSUB:-1.5}" 'BEGIN{printf "%d", c/t*o}')}"; [ "$PER" -lt 1 ] && PER=1
   echo "[node] $(hostname) cores=$CORES per_node=$PER threads=$DUMP_THREADS chunk=$2 ($(wc -l < "$2") runs)"
   export -f one cohort_of; export SRA_DIR FQ_DIR TMP_DIR LOG_DIR FAILED DONE_TSV MAP DUMP_THREADS
   # load heartbeat (read by office-probe → CPU 활용률 in the app): iso  host  load1  ncpu  fasterq-dump procs  pigz procs  chunk
