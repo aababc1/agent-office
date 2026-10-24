@@ -196,7 +196,12 @@ node)
   CORES=$(nproc); PER="${DUMP_PER_NODE:-$(( CORES / DUMP_THREADS ))}"; [ "$PER" -lt 1 ] && PER=1
   echo "[node] $(hostname) cores=$CORES per_node=$PER threads=$DUMP_THREADS chunk=$2 ($(wc -l < "$2") runs)"
   export -f one cohort_of; export SRA_DIR FQ_DIR TMP_DIR LOG_DIR FAILED DONE_TSV MAP DUMP_THREADS
+  # load heartbeat (read by office-probe → CPU 활용률 in the app): iso  host  load1  ncpu  fasterq-dump procs  pigz procs  chunk
+  LOADF="${2%.txt}.load"
+  ( while :; do printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$(hostname)" "$(cut -d' ' -f1 /proc/loadavg)" "$CORES" "$(pgrep -c -x fasterq-dump)" "$(pgrep -c -x pigz)" "$(basename "$2" .txt)" > "$LOADF.tmp" && mv "$LOADF.tmp" "$LOADF"; sleep 60; done ) &
+  LOADPID=$!; trap 'kill $LOADPID 2>/dev/null' EXIT
   xargs -a "$2" -n1 -P "$PER" -I{} bash -c 'one {}'
+  kill $LOADPID 2>/dev/null; rm -f "$LOADF"
   touch "${2%.txt}.done"; echo "[node] chunk done" ;;
 one)     one "$2" ;;
 *)       sed -n '9,18p' "$0" ;;

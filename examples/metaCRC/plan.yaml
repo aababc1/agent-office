@@ -86,7 +86,7 @@ stages:
     after: [prefetch]
     done: {kind: file, path: "$FQ_DIR/{cohort}/{run}_1.fastq.gz"}   # _2 is written first, _1 last → _1 present = both present
     failed: {log: "$LOG_DIR/dump.FAILED"}                # NOT_VALIDATED | NO_SRA | DUMP_FAIL
-    runner: {kind: slurm, job: metacrc-dump, nodes: 1, per_node: 8, threads: 4, time_h: 24}   # 03_dump_kbds.sh: 1 sbatch = 1 node, runs fed as prefetch finishes
+    runner: {kind: slurm, job: metacrc-dump, nodes: 1, per_node: 8, threads: 4, time_h: 24, load: "$PROJ/manifest/dump_chunks/chunk.*.load"}   # 03_dump_kbds.sh: 1 sbatch = 1 node per cohort; .load = node heartbeat (CPU use)
 
   - name: qc
     desc: "fastp + host removal (04_qc.sbatch)"

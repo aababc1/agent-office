@@ -186,6 +186,27 @@ def read_nextflow_log(path: str) -> dict[str, Any]:
     return info
 
 
+def read_node_loads(pattern: str, now: float, max_age_s: int = 600) -> list[dict[str, Any]]:
+    """Node heartbeats written by a node job every minute: iso  host  load1  ncpu  [procA procB chunk].
+    util = load1 / ncpu (1.0 = every core busy). Files older than max_age are ignored (the job ended)."""
+    import glob as _glob
+    out = []
+    for f in sorted(_glob.glob(pattern)):
+        try:
+            if now - os.path.getmtime(f) > max_age_s:
+                continue
+            parts = _read_lines(f)[0].rstrip("\n").split("\t")
+            if len(parts) < 4:
+                continue
+            load1 = float(parts[2]); ncpu = int(parts[3]) or 1
+            out.append({"host": parts[1], "load1": load1, "ncpu": ncpu, "util": round(min(1.0, load1 / ncpu), 3), "at": parts[0],
+                        "procs": {"a": int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else None, "b": int(parts[5]) if len(parts) > 5 and parts[5].isdigit() else None},
+                        "chunk": parts[6] if len(parts) > 6 else os.path.basename(f)})
+        except (OSError, ValueError, IndexError):
+            continue
+    return out
+
+
 # ---------------------------------------------------------------- plan stage markers
 def _units(path: str) -> list[str]:
     return [l.strip() for l in _read_lines(path) if l.strip() and not l.startswith("#")]
@@ -403,6 +424,11 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
             job = (st.get("runner") or {}).get("job")
             s["running"] = 0  # filled from squeue below when the job name matches
             s["_job"] = job
+            loadglob = (st.get("runner") or {}).get("load")
+            if loadglob:
+                s["nodes"] = read_node_loads(expand_vars(str(loadglob), paths), now)
+                if s["nodes"]:
+                    s["cpuUtil"] = round(sum(n["util"] for n in s["nodes"]) / len(s["nodes"]), 3)
         s["rates"] = rates(done_at, now)
         remaining = (s["total"] - s["done"] - len(s.get("failed") or {})) if s.get("total") is not None else None
         s["remaining"] = remaining
@@ -471,7 +497,8 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
         st[name] = {"done": s.get("done", 0), "total": s.get("total"), "unit": s.get("unit"), "failed": len(s.get("failed") or {}),
                     "running": s.get("running", 0), "pending": s.get("pending", 0), "ratio": s.get("ratio"), "eta": s.get("eta"),
                     "rates": s.get("rates"), "lastAt": s.get("lastAt"), "desc": s.get("desc"), "after": s.get("after"),
-                    "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"], "groups": s.get("groups")}
+                    "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"], "groups": s.get("groups"),
+                    "nodes": s.get("nodes"), "cpuUtil": s.get("cpuUtil"), "jobsByCohort": s.get("jobsByCohort")}
     jobs = {}
     for name, s in report["stages"].items():
         for unit, reason in list((s.get("failed") or {}).items())[:200]:
