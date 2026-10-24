@@ -146,7 +146,7 @@ export async function detectPipelineEvents(env, project, state, plan) {
     const complete = need.every(s => s.total && s.done >= s.total);
     const etas = need.map(s => (s.total && s.done >= s.total) ? null : (s.eta && s.eta.at) || null); const unknown = etas.some((e, i) => e === null && !(need[i].total && need[i].done >= need[i].total));
     const eta = unknown ? null : etas.filter(Boolean).sort().pop();
-    const date = Date.parse(m.date); let status = "ok";
+    const date = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(m.date) ? `${m.date}T23:59:59+09:00` : m.date); let status = "ok";   // bare date = end of day, Seoul
     if (complete) status = "done"; else if (Date.now() > date) status = "overdue"; else if (eta && Date.parse(eta) > date) status = "late"; else if (!eta) status = "unknown";
     const k = `milestone:${m.name}`;
     if (mem[k] !== status) { await remember(env, project, k, status); if (!firstMs && (status === "late" || status === "overdue") && mem[k] !== "overdue") await notify(env, project, "milestone_late", `${project} · 🏁 ${m.name} ${status === "overdue" ? "기한 지남" : "늦어질 예정"}`, `목표 ${m.date}${eta ? ` · 예상 ${eta.slice(0, 10)}` : ""}`, { tag: `${project}:ms:${m.name}` }); }

@@ -1099,7 +1099,8 @@ function milestoneState(m, info) {
   const complete = all.length > 0 && all.every(i => i.complete);
   const etaAt = all.map(i => i.complete ? null : (i.st.eta && i.st.eta.at) || null); const unknown = all.some((i, k) => !i.complete && !etaAt[k]);
   const eta = unknown ? null : etaAt.filter(Boolean).sort().pop() || null;
-  const date = m.date ? Date.parse(m.date) : NaN; const dday = isNaN(date) ? null : Math.ceil((date - Date.now()) / dayMs);
+  const date = m.date ? Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(m.date) ? `${m.date}T23:59:59+09:00` : m.date) : NaN;   // a bare date = end of that day (Seoul)
+  const dday = isNaN(date) ? null : Math.ceil((date - Date.now()) / dayMs);
   let status = 'unknown', slack = null;
   if (complete) status = 'done';
   else if (!isNaN(date) && dday < 0) status = 'late';

@@ -19,7 +19,7 @@
 #   ./03_dump_kbds.sh node <chunk>       (what sbatch runs) xargs -P PER_NODE over the chunk's runs
 #   ./03_dump_kbds.sh one <run>          (one run; called by `node`)
 # Knobs (export in 00_env_local.sh or the environment): DUMP_MODE=cohort|stream DUMP_PART=cpu32-only DUMP_THREADS=4 DUMP_PER_NODE=(cores/threads)
-#   DUMP_CHUNK=160 (runs per node job) DUMP_MAX_NODES=5 DUMP_MIN_BATCH=16 DUMP_FEED_S=600 DUMP_TIME=24:00:00 DL_ENV=sra-tools
+#   DUMP_PART may list several ("cpu32-only cpu64-only": each job takes the one with most idle nodes)  DUMP_CHUNK=160 (runs per node job) DUMP_MAX_NODES=5 DUMP_MIN_BATCH=16 DUMP_FEED_S=600 DUMP_TIME=24:00:00 DL_ENV=sra-tools
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")"
@@ -84,14 +84,20 @@ cohort_table() {
 # runs of one cohort that are waiting (validated, no fastq, not FAILED, not inflight), manifest order
 cohort_waiting() { pending_list | awk -F'\t' -v c="$1" '$2==c{print $1}'; }
 
-node_cores() { sinfo -h -p "$DUMP_PART" -o '%c' 2>/dev/null | head -1; }
+node_cores() { sinfo -h -p "$1" -o '%c' 2>/dev/null | head -1; }
+# DUMP_PART="cpu32-only cpu64-only": pick, per job, the listed partition with the most idle nodes (first one if sinfo is silent)
+pick_part() {
+  local best="" bestn=-1 p n
+  for p in $DUMP_PART; do n=$(sinfo -h -p "$p" -t idle -o '%D' 2>/dev/null | awk '{s+=$1} END{print s+0}'); [ "$n" -gt "$bestn" ] && { best="$p"; bestn=$n; }; done
+  echo "${best:-${DUMP_PART%% *}}"
+}
 
 sbatch_chunk() {   # $1 = file of runs, $2 = job-name suffix (cohort or "mixed")
-  local f="$1" tag="$2" cores; cores="$(node_cores)"; [ -n "$cores" ] || cores=32
-  local jid; jid=$(sbatch --parsable -J "$JOB:$tag" -p "$DUMP_PART" -N 1 -n 1 -c "$cores" --exclusive -t "$DUMP_TIME" \
+  local f="$1" tag="$2" part cores; part="$(pick_part)"; cores="$(node_cores "$part")"; [ -n "$cores" ] || cores=32
+  local jid; jid=$(sbatch --parsable -J "$JOB:$tag" -p "$part" -N 1 -n 1 -c "$cores" --exclusive -t "$DUMP_TIME" \
                    -o "$LOG_DIR/slurm/dump-%j.out" --wrap "bash '$SELF' node '$f'" 2>&1) || { echo "[submit] sbatch failed: $jid" >&2; rm -f "$f"; return 1; }
   echo "$jid" > "${f%.txt}.job"
-  echo "  job $jid  $JOB:$tag  ← $(wc -l < "$f") runs" >&2      # stderr: submit_runs' stdout is its job count
+  echo "  job $jid  $JOB:$tag  on $part ($cores cores) ← $(wc -l < "$f") runs" >&2      # stderr: submit_runs' stdout is its job count
 }
 
 submit_runs() {   # $1 = file of runs, $2 = tag, $3 = max jobs → chunks of DUMP_CHUNK, returns jobs submitted
