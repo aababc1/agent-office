@@ -5,7 +5,9 @@
 # Agreed 2026-10-23: fasterq-dump default split mode (= split-3), 4 threads per run, pigz, verify (gzip -t), cohort subfolders
 # $FQ_DIR/<BioProject>/<run>_{1,2}.fastq.gz, delete $SRA_DIR/<run> after a verified dump, everything (temp too) under $HOME.
 # Node packing (K-BDS = exclusive nodes, node-hour billing): 1 sbatch = 1 node, PER_NODE runs at a time × THREADS each.
-# Failure codes as in the runbook: NOT_VALIDATED | NO_SRA | DUMP_FAIL  → $LOG_DIR/dump.FAILED ("<run> <code>").
+# Failure codes as in the runbook: NOT_VALIDATED | NO_SRA | DUMP_FAIL, plus NOT_PAIRED (fasterq-dump gave no _1/_2 — a run
+# labelled PAIRED that is really single-end; not retried) → $LOG_DIR/dump.FAILED ("<run> <code>").
+# Orphan reads (<run>.fastq from split-3) are dropped by default and their byte count logged; DUMP_KEEP_ORPHANS=1 keeps them as <run>_s.fastq.gz.
 #
 # Usage (login node, ~/office):
 #   ./03_dump_kbds.sh pending            per cohort: total / validated / dumped / waiting, and READY (prefetch of that cohort finished)
@@ -140,16 +142,20 @@ one() {   # one run on a compute node — the per-run recipe (§03)
   echo "$(date -u +%FT%TZ) start $RUN cohort=$COH host=$(hostname)" >> "$LOG"
   # fasterq-dump 2.11.2: default split mode is split-3 (_1/_2 + leftover unpaired, which is dropped below)
   fasterq-dump --threads "$DUMP_THREADS" --temp "$T" --outdir "$T" "$SRA" >> "$LOG" 2>&1 || fail DUMP_FAIL || return 1
-  [ -s "$T/${RUN}_1.fastq" ] && [ -s "$T/${RUN}_2.fastq" ] || fail DUMP_FAIL || return 1
-  rm -f "$T/$RUN.fastq"
+  if ! { [ -s "$T/${RUN}_1.fastq" ] && [ -s "$T/${RUN}_2.fastq" ]; }; then
+    [ -s "$T/$RUN.fastq" ] && { echo "$(date -u +%FT%TZ) no _1/_2, only unpaired $(stat -c %s "$T/$RUN.fastq") bytes" >> "$LOG"; fail NOT_PAIRED; return 1; }
+    fail DUMP_FAIL; return 1
+  fi
+  local ORPH=0; [ -f "$T/$RUN.fastq" ] && ORPH=$(stat -c %s "$T/$RUN.fastq")
   local GZ="gzip"; command -v pigz >/dev/null 2>&1 && GZ="pigz -p $DUMP_THREADS"
+  if [ "${DUMP_KEEP_ORPHANS:-0}" = 1 ] && [ "$ORPH" -gt 0 ]; then $GZ "$T/$RUN.fastq" && mv "$T/$RUN.fastq.gz" "$OUT/${RUN}_s.fastq.gz"; else rm -f "$T/$RUN.fastq"; fi
   $GZ "$T/${RUN}_2.fastq" && $GZ "$T/${RUN}_1.fastq" || fail DUMP_FAIL || return 1
   gzip -t "$T/${RUN}_1.fastq.gz" && gzip -t "$T/${RUN}_2.fastq.gz" || fail DUMP_FAIL || return 1
   mv "$T/${RUN}_2.fastq.gz" "$OUT/${RUN}_2.fastq.gz" && mv "$T/${RUN}_1.fastq.gz" "$OUT/${RUN}_1.fastq.gz" || fail DUMP_FAIL || return 1   # _1 last = the marker
   local B; B=$(( $(stat -c %s "$OUT/${RUN}_1.fastq.gz") + $(stat -c %s "$OUT/${RUN}_2.fastq.gz") ))
   rm -rf "$T" "$SRA_DIR/$RUN"                                                          # runbook: .sra goes once the dump is verified
-  printf '%s\t%s\t%s\t%s\t%s\n' "$RUN" "$(date -u +%FT%TZ)" "$(( $(date +%s) - T0 ))" "$B" "$COH" >> "$DONE_TSV"
-  echo "$(date -u +%FT%TZ) done $RUN $(( $(date +%s) - T0 ))s $B bytes" >> "$LOG"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$RUN" "$(date -u +%FT%TZ)" "$(( $(date +%s) - T0 ))" "$B" "$COH" "$ORPH" >> "$DONE_TSV"   # run, when, seconds, fastq.gz bytes, cohort, orphan bytes (uncompressed)
+  echo "$(date -u +%FT%TZ) done $RUN $(( $(date +%s) - T0 ))s $B bytes orphans=$ORPH" >> "$LOG"
 }
 
 case "${1:-}" in
@@ -171,11 +177,11 @@ status)
   T=$(wc -l < "$RUNLIST"); V=$(find "$SRA_DIR" -maxdepth 2 -name .validated 2>/dev/null | wc -l); D=$(find "$FQ_DIR" -mindepth 2 -maxdepth 2 -name '*_1.fastq.gz' 2>/dev/null | wc -l); F=$(sort -u "$FAILED" 2>/dev/null | wc -l)
   printf 'dumped %6d / %d   validated-waiting %d   failed %d   inflight %d\n' "$D" "$T" "$(pending_list | wc -l)" "$F" "$(inflight | wc -l)"
   echo "jobs:"; squeue -u "$USER" -h -o '  %i %j %T %M %N %r' 2>/dev/null | grep -F " $JOB" 
-  if [ -s "$DONE_TSV" ]; then awk -F'\t' -v now="$(date +%s)" '{cmd="date -d \""$2"\" +%s"; cmd|getline t; close(cmd); if(now-t<=3600){n++;b+=$4}} END{printf "last 1h: %d runs, %.1f GB fastq.gz → %d runs/h\n", n, b/1e9, n}' "$DONE_TSV"; fi
+  if [ -s "$DONE_TSV" ]; then awk -F'\t' -v now="$(date +%s)" '{cmd="date -d \""$2"\" +%s"; cmd|getline t; close(cmd); if(now-t<=3600){n++;b+=$4} tot++; sec+=$3; orph+=$6+0} END{printf "last 1h: %d runs, %.1f GB fastq.gz → %d runs/h   all: %d runs, avg %.0f s/run, orphans dropped %.2f GB\n", n, b/1e9, n, tot, sec/tot, orph/1e9}' "$DONE_TSV"; fi
   echo "by cohort (dumped / total · prefetched · state):"
   cohort_table | awk -F'\t' '{st=($5>=$2)?"✓ done":($7>0?"▶ running":($9?"ready":"prefetching")); printf "  %-14s %5d / %5d   prefetched %5d   %s\n", $1, $5, $2, $3, st}' | sort -k2,2nr
   [ -s "$FAILED" ] && { echo "failed reasons:"; awk '{print $2}' "$FAILED" | sort | uniq -c; }; true ;;
-retry)   [ -s "$FAILED" ] && { cp "$FAILED" "$FAILED.$(date +%Y%m%d-%H%M%S)"; : > "$FAILED"; echo "[retry] FAILED cleared (copy kept); they are pending again — feed/submit picks them up"; } || echo "nothing failed" ;;
+retry)   [ -s "$FAILED" ] && { cp "$FAILED" "$FAILED.$(date +%Y%m%d-%H%M%S)"; grep ' NOT_PAIRED$' "$FAILED" > "$FAILED.tmp" || true; mv "$FAILED.tmp" "$FAILED"; echo "[retry] FAILED cleared except NOT_PAIRED (copy kept); the rest are pending again — feed/submit picks them up"; } || echo "nothing failed" ;;
 node)
   # batch jobs do not read .bashrc: find conda by path
   if ! command -v conda >/dev/null 2>&1; then for c in "${CONDA_ROOT:-}" "$HOME/miniconda3" "$HOME/anaconda3" /apps/application/miniconda3; do [ -n "$c" ] && [ -f "$c/etc/profile.d/conda.sh" ] && { source "$c/etc/profile.d/conda.sh"; break; }; done; fi
