@@ -5,6 +5,7 @@
 // Both end with a broadcast to the project's Floor (WebSocket viewers).
 import { hmacHex, json, nowIso, parseJSONL, text, timingSafeEqual } from "./util.js";
 import { rawFile } from "./github.js";
+import { detectDocsEvents, detectPipelineEvents, notify } from "./push.js";
 
 const RE_PROGRESS = /^sessions\/([^/]+)\.progress\.json$/;
 const RE_CHUNK = /^sessions\/([^/]+)\/events\.(\d{3})\.jsonl$/;
@@ -26,6 +27,10 @@ export async function webhook(request, env, ctx) {
     const last = { number: d.number, title: d.title, by, action: `${event}:${p.action}`, at: nowIso() };
     await env.DB.prepare("UPDATE projects SET discussion_at=?, discussion_last=? WHERE name=?").bind(last.at, JSON.stringify(last), project).run();
     ctx.waitUntil(broadcast(env, project, { kind: "discussion", project, ...last }));
+    const isComment = event === "discussion_comment"; const excerpt = ((isComment ? (p.comment || {}).body : d.body) || "").replace(/\s+/g, " ").slice(0, 90);
+    if (["created", "edited", "answered"].includes(p.action) && !(isComment && p.action === "edited"))
+      ctx.waitUntil(notify(env, project, "discussion", `${project} · 💬 ${last.title || "새 글"}`, `${by || ""}${isComment ? " · 댓글" : " · 새 글"}${excerpt ? ` — ${excerpt}` : ""}`,
+        { url: `/#p=${encodeURIComponent(project)}&d=${last.number || ""}`, skipLogin: by, tag: `${project}:disc:${last.number || ""}` }).catch(e => console.error("notify disc", e.message)));
     return json({ ok: true });
   }
   if (event !== "push") return json({ ok: true, ignored: event });
@@ -57,6 +62,8 @@ export async function applyDocs(env, repo, changes, branch) {
   }
   if (branch) await upsertDocsConfig(env, project, { branch });
   await broadcast(env, project, { kind: "docs", project, at: nowIso() });
+  const added = changes.filter(d => !d.removed);
+  if (added.length) await notify(env, project, "docs", `${project} · 새 자료 ${added.length}개`, added.slice(0, 3).map(d => d.path.replace(/^docs\//, "")).join(", ") + (added.length > 3 ? " …" : ""), { skipLogin: added[0].by || null, tag: `${project}:docs` }).catch(e => console.error("notify docs", e.message));
 }
 
 export async function processRepoPush(env, repo, sha, paths, branch) {
@@ -152,6 +159,10 @@ async function upsertPipeline(env, project, run) {
   await env.DB.prepare(`INSERT INTO pipeline_runs(id, project, started_at, last_at, status, progress_json, updated_at) VALUES(?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET last_at=excluded.last_at, status=excluded.status, progress_json=excluded.progress_json, updated_at=excluded.updated_at`)
     .bind(run.id, project, run.startedAt || null, run.lastAt || null, run.status || null, JSON.stringify(run), nowIso()).run();
+  try {   // per-floor push: transitions since the last state (cohort/stage done, failures, milestones, probe back)
+    const row = await env.DB.prepare("SELECT plan_json FROM projects WHERE name=?").bind(project).first();
+    await detectPipelineEvents(env, project, run, row && row.plan_json ? JSON.parse(row.plan_json) : null);
+  } catch (e) { console.error("notify", project, e.message); }
 }
 
 export async function broadcast(env, project, payload) {

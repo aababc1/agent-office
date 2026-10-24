@@ -23,6 +23,9 @@ class_name = "Floor"
 tag = "v1"
 new_sqlite_classes = ["Floor"]
 
+[triggers]
+crons = ["*/30 * * * *"]           # push: probe silent 2h+, new Drive files (free plan allows cron triggers)
+
 [vars]
 GH_OWNER = "aababc1"              # data repos live under this account
 ADMIN_LOGIN = "aababc1"           # may register projects / rotate write tokens

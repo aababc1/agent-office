@@ -191,6 +191,14 @@ select.btn{padding:4px 6px}
 .talk textarea,.talk input[type=text]{width:100%;font:inherit;font-size:12px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:7px 8px;resize:vertical;min-height:34px}
 .talk textarea{min-height:84px} .talk label.ck{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
 .badge-new{font-size:10px;color:var(--accent);font-weight:600;margin-left:6px}
+.bell{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:8px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--muted);align-self:center}
+.bell.on{color:var(--accent);border-color:var(--accent)} .bell:hover{border-color:var(--line-strong)}
+.floor{grid-template-columns:44px minmax(0,1fr) auto}
+.kinds{margin:0 8px 8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);font-size:11px;display:flex;flex-direction:column;gap:5px}
+.kinds .kh{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ink)} .kinds .kh .x{margin-left:auto;cursor:pointer;color:var(--muted)}
+.kinds label{display:flex;gap:6px;align-items:center;cursor:pointer} .kinds input{accent-color:var(--accent)}
+.kinds .row{display:flex;gap:6px;margin-top:4px} .kinds .row .btn{font-size:11px;padding:4px 8px}
+.kinds .note{padding:0;font-size:10.5px}
 /* 공정 (pipeline stages) */
 .pipe{display:flex;flex-direction:column;gap:10px}
 .pipe .big{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:end}
@@ -481,8 +489,8 @@ async function ghFloors() {       // one repo may hold one project (usual) or se
 
 // ---- Worker mode: cookie session, REST + WebSocket; the Worker checks repo membership server-side.
 const WK = {user: null, sock: null, backoff: 1000};
-async function wkFetch(path) {
-  const r = await fetch(path, {cache: 'no-store', credentials: 'same-origin'});
+async function wkFetch(path, opts) {
+  const r = await fetch(path, {cache: 'no-store', credentials: 'same-origin', ...(opts || {}), headers: {...((opts && opts.body) ? {'content-type': 'application/json'} : {}), ...((opts && opts.headers) || {})}});
   if (r.status === 401) { WK.user = null; renderAuth(); throw new Error('sign in'); }
   if (!r.ok) throw new Error(`api ${r.status}`);
   return await r.json();
@@ -977,13 +985,50 @@ function renderPeople() {
     list.push(row(c.actor, type || '에이전트', ({Explore:'--c-explore',Plan:'--c-plan','general-purpose':'--c-general','claude-code-guide':'--c-guide'})[type] || '--c-other', descOf(c.actor.slice(6)), c.gone)); }
   $('people').innerHTML = list.join(''); $('p-count').textContent = `${list.length}명 근무`;
 }
+// ================================================================ per-floor push notifications (Worker Web Push)
+const PN = {prefs: {}, devices: 0, key: null, kinds: [], ko: {}};
+const DEFAULT_KINDS = ['cohort_done', 'stage_done', 'job_failed', 'probe_lost', 'milestone_late', 'discussion', 'docs'];
+async function loadPushPrefs() {
+  if (MODE !== 'worker' || !WK.user) return;
+  try { const r = await wkFetch('/api/push/prefs'); PN.prefs = r.prefs || {}; PN.devices = r.devices || 0; } catch (e) { /* no prefs yet */ }
+}
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+async function ensureSubscribed() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('이 브라우저는 푸시 알림을 지원하지 않습니다');
+  if (/iP(hone|ad)/.test(navigator.userAgent) && !isStandalone()) throw new Error('아이폰은 홈 화면에 추가한 앱에서만 알림이 됩니다 — 공유 → 홈 화면에 추가 후 거기서 켜 주세요');
+  const perm = await Notification.requestPermission(); if (perm !== 'granted') throw new Error('알림 권한이 거부됐습니다');
+  const reg = await navigator.serviceWorker.ready;
+  if (!PN.key) { const k = await wkFetch('/api/push/key'); PN.key = k.key; PN.kinds = k.kinds; PN.ko = k.ko; }
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(PN.key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))});
+  return sub.toJSON();
+}
+async function openKinds(project) {
+  if (!PN.kinds.length) { try { const k = await wkFetch('/api/push/key'); PN.key = k.key; PN.kinds = k.kinds; PN.ko = k.ko; } catch (e) { PN.kinds = DEFAULT_KINDS; } }
+  const cur = PN.prefs[project] || []; const on = cur.length > 0;
+  let box = $('kinds'); if (box) box.remove();
+  box = document.createElement('div'); box.className = 'kinds'; box.id = 'kinds';
+  box.innerHTML = `<div class="kh">🔔 ${esc(project)} 알림<span class="x" id="kx">✕</span></div>
+    ${PN.kinds.map(k => `<label><input type="checkbox" data-k="${k}" ${(on ? cur : DEFAULT_KINDS).includes(k) ? 'checked' : ''}> ${esc(PN.ko[k] || k)}</label>`).join('')}
+    <div class="row"><button class="btn on" type="button" id="ksave">${on ? '저장' : '이 폰에서 켜기'}</button>${on ? '<button class="btn" type="button" id="koff">끄기</button>' : ''}<button class="btn" type="button" id="ktest" title="이 계정의 기기 전체로 시험 알림">시험</button></div>
+    <div class="note" id="kmsg">${PN.devices ? `등록된 기기 ${PN.devices}대` : '아직 등록된 기기가 없습니다'}</div>`;
+  const anchor = $('floors').querySelector(`.floor[data-p="${CSS.escape(project)}"]`); (anchor || $('floors')).insertAdjacentElement('afterend', box);
+  const msg = t => { $('kmsg').textContent = t; };
+  $('kx').onclick = () => box.remove();
+  $('ksave').onclick = async () => { const kinds = [...box.querySelectorAll('input[data-k]:checked')].map(i => i.dataset.k);
+    try { msg('등록 중…'); const subscription = await ensureSubscribed(); await wkFetch('/api/push/subscribe', {method: 'POST', body: JSON.stringify({subscription, project, kinds})}); PN.prefs[project] = kinds; await loadPushPrefs(); renderFloors(); box.remove(); } catch (e) { msg(e.message); } };
+  const off = $('koff'); if (off) off.onclick = async () => { try { await wkFetch('/api/push/prefs/set', {method: 'POST', body: JSON.stringify({project, kinds: []})}); delete PN.prefs[project]; renderFloors(); box.remove(); } catch (e) { msg(e.message); } };
+  $('ktest').onclick = async () => { try { msg('보내는 중…'); const r = await wkFetch('/api/push/test', {method: 'POST', body: '{}'}); msg(`시험 알림 결과: ${(r.results || []).join(', ') || '등록된 기기 없음'}`); } catch (e) { msg(e.message); } };
+}
 function renderFloors() {
   const projects = (S.index && S.index.projects) || []; const N = projects.length;
   $('floors').innerHTML = projects.map((p, i) => { const no = N - i; const on = p.active > 0 && Date.now() - Date.parse(p.lastAt || 0) < 120e3; const key = p.key || p.name;
     if (p.locked) return `<li class="floor locked" data-no="${no}" title="이 층은 참여자만 볼 수 있습니다"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">🔒 ${esc(p.name)}</div><div class="sb">참여자만 입장</div></div></li>`;
     const warn = (p.alerts || []).some(a => Date.now() - Date.parse(a.t || 0) < 86400e3);
-    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}${p.docsAt && Date.now() - Date.parse(p.docsAt) < 86400e3 ? '<span class="badge-new">📎 새 자료</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}${p.pipeline && p.pipeline.total ? `<div class="sb">공정 ${p.pipeline.done}/${p.pipeline.total} · ${Math.round((p.pipeline.ratio || 0) * 100)}%${p.pipeline.running ? ` · ▶${p.pipeline.running}` : ''}${p.pipeline.failed ? ` · <span style="color:var(--bad)">✕${p.pipeline.failed}</span>` : ''}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div></li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
-  $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = go; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+    const bell = MODE === 'worker' && WK.user ? `<button type="button" class="bell ${(PN.prefs[p.name] || []).length ? 'on' : ''}" data-bell="${esc(p.name)}" title="${(PN.prefs[p.name] || []).length ? '이 층 알림 켜짐 — 종류 바꾸기' : '이 층 알림 켜기'}">${(PN.prefs[p.name] || []).length ? '🔔' : '🔕'}</button>` : '';
+    return `<li class="floor ${key === (S.floorKey || S.project) ? 'sel' : ''}" tabindex="0" data-p="${esc(key)}" data-no="${no}"><span class="no">${no}F</span><div style="min-width:0"><div class="nm">${esc(p.name)}${warn ? ' <span title="최근 24시간 오류" style="color:var(--bad)">●</span>' : ''}${p.discussionAt && Date.now() - Date.parse(p.discussionAt) < 86400e3 ? '<span class="badge-new">💬 새 글</span>' : ''}${p.docsAt && Date.now() - Date.parse(p.docsAt) < 86400e3 ? '<span class="badge-new">📎 새 자료</span>' : ''}</div>${p.description ? `<div class="sb">${esc(p.description)}</div>` : ''}${p.pipeline && p.pipeline.total ? `<div class="sb">공정 ${p.pipeline.done}/${p.pipeline.total} · ${Math.round((p.pipeline.ratio || 0) * 100)}%${p.pipeline.running ? ` · ▶${p.pipeline.running}` : ''}${p.pipeline.failed ? ` · <span style="color:var(--bad)">✕${p.pipeline.failed}</span>` : ''}</div>` : ''}<div class="sb"><span class="lamp ${on ? 'on' : 'off'}"></span>세션 ${p.sessions}개 · ${on ? '지금 활동 중' : fmtRel(p.lastAt)}</div></div>${bell}</li>`; }).join('') || ((MODE === 'github' && !GHUB.token) || (MODE === 'worker' && !WK.user) ? '<li class="signin">GitHub로 로그인하면 참여 중인 프로젝트 층이 보입니다<a class="btn" href="auth/login">GitHub로 로그인</a></li>' : '<li class="empty">아직 올라온 프로젝트가 없습니다</li>');
+  $('floors').querySelectorAll('.floor:not(.locked)').forEach(el => { const go = () => selectProject(el.dataset.p, +el.dataset.no, true); el.onclick = ev => { if (ev.target.closest('.bell')) return; go(); }; el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
+  $('floors').querySelectorAll('.bell').forEach(b => { b.onclick = ev => { ev.stopPropagation(); openKinds(b.dataset.bell); }; });
 }
 function renderSessions() {
   const list = (S.projectInfo && S.projectInfo.sessions) || [];
@@ -1266,13 +1311,13 @@ async function boot() {
   if (MODE === 'github') { ghLoad(); ghFromHash(); }
   if (MODE === 'worker') { try { WK.user = await wkFetch('/api/me'); } catch (e) { WK.user = null; } }
   renderAuth();
-  await loadIndex();
+  await loadIndex(); await loadPushPrefs();
   renderFloors();
   const want = new URLSearchParams(location.hash.slice(1));                     // deep links from discussion posts: #p=<project>&s=<session>
   let stored = null; try { stored = localStorage.getItem('office.floor'); } catch (e) { /* no storage */ }
   const projects = (S.index.projects || []).filter(p => !p.locked);
   const i = Math.max(0, want.get('p') ? projects.findIndex(p => p.name === want.get('p')) : stored && projects.some(p => p.name === stored) ? projects.findIndex(p => p.name === stored) : projects.findIndex(p => p.active));
-  S.wantSession = want.get('s') || null;
+  S.wantSession = want.get('s') || null; S.wantDisc = want.get('d') ? Number(want.get('d')) : null;
   if (projects.length) await selectProject(projects[i].key || projects[i].name, (S.index.projects || []).length - (S.index.projects || []).indexOf(projects[i]), false); else { $('t-project').textContent = 'Agent Office'; $('t-status').hidden = true; }
   setInterval(() => { if (S.mode === 'live') followLatest(); }, 30000);
   let last = performance.now();
@@ -1324,7 +1369,7 @@ async function selectProject(key, no, showIndicator) {
   if (showIndicator && ov.ind) { ov.ind.textContent = `▲ ${no}F`; ov.ind.classList.add('show'); S.elev.lit = 2.5; clearTimeout(ov.indT); ov.indT = setTimeout(() => ov.ind.classList.remove('show'), 2500); }
   try { S.projectInfo = MODE === 'worker' ? await wkFetch(`/api/projects/${encodeURIComponent(S.project)}`) : await getJSON('project.json'); } catch (e) { S.projectInfo = {sessions: []}; }
   renderSessions();
-  if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true); loadDocs(); } else { $('talk-card').hidden = true; $('docs-card').hidden = true; }
+  if (MODE === 'worker') { wkConnect(); T.mode = 'list'; T.open = null; loadTalk(true).then(() => { if (S.wantDisc) { openTalk(S.wantDisc); S.wantDisc = null; } }); loadDocs(); } else { $('talk-card').hidden = true; $('docs-card').hidden = true; }
   await loadPipeline(); applyFloorShape();
   const s = (S.wantSession && S.projectInfo.sessions.find(x => x.session === S.wantSession)) || S.projectInfo.sessions[0]; S.wantSession = null;
   if (s) await selectSession(s.session); else { S.session = null; S.events = []; S.progress = null; $('t-project').textContent = S.project; $('t-session').textContent = ''; clearInterval(S.pollTimer); resetFloor(); renderProgress(); renderPeople(); }
