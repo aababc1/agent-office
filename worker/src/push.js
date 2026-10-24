@@ -90,6 +90,11 @@ async function sha256b64(s) { return b64url(await crypto.subtle.digest("SHA-256"
 
 /** Push one event of a floor to everyone who turned that kind on for that floor (except `skipLogin`, e.g. the author). */
 export async function notify(env, project, kind, title, body, { url, skipLogin, tag } = {}) {
+  const recent = (await env.DB.prepare("SELECT COUNT(*) AS n FROM notify_log WHERE project=? AND sent>0 AND at>?").bind(project, new Date(Date.now() - 10 * 60e3).toISOString()).first()).n;
+  if (recent >= 8) {   // burst guard: a catch-up (many cohorts finishing in one probe) must not ring the phone 20 times
+    await env.DB.prepare("INSERT INTO notify_log(project, kind, title, body, sent, at) VALUES(?,?,?,?,0,?)").bind(project, kind, title, `(muted: ${recent} in 10 min) ${body}`, nowIso()).run();
+    return 0;
+  }
   const rows = (await env.DB.prepare(`SELECT s.id, s.login, s.endpoint, s.p256dh, s.auth, s.fails FROM push_prefs p JOIN push_subs s ON s.login=p.login
      WHERE p.project=? AND p.kinds_json LIKE ?`).bind(project, `%"${kind}"%`).all()).results || [];
   let sent = 0;
@@ -120,17 +125,19 @@ const fmtN = n => Number(n || 0).toLocaleString("en-US");
 /** Called after a pipeline state is stored. Emits cohort_done / stage_done / job_failed / milestone_late transitions. */
 export async function detectPipelineEvents(env, project, state, plan) {
   if (!state || !state.stages) return;
-  const mem = await remembered(env, project); const first = Object.keys(mem).length === 0;   // first sight: record, do not spam
+  const mem = await remembered(env, project); const keys = Object.keys(mem);
+  // first sight of a family (stages, cohorts, milestones): record what is already done, do not announce old news
+  const firstStage = !keys.some(k => k.startsWith("stage:")), firstCohort = !keys.some(k => k.startsWith("cohort:")), firstMs = !keys.some(k => k.startsWith("milestone:"));
   const site = state.site || state.id || "";
   for (const [name, st] of Object.entries(state.stages)) {
     // stage done
-    if (st.total && st.done >= st.total) { const k = `stage:${name}:done`; if (mem[k] !== "1") { await remember(env, project, k, 1); if (!first) await notify(env, project, "stage_done", `${project} · ${name} 완료`, `${fmtN(st.done)} / ${fmtN(st.total)} ${st.unit || ""} 끝${site ? ` · ${site}` : ""}`); } }
+    if (st.total && st.done >= st.total) { const k = `stage:${name}:done`; if (mem[k] !== "1") { await remember(env, project, k, 1); if (!firstStage) await notify(env, project, "stage_done", `${project} · ${name} 완료`, `${fmtN(st.done)} / ${fmtN(st.total)} ${st.unit || ""} 끝${site ? ` · ${site}` : ""}`); } }
     // failures grew
     const k2 = `stage:${name}:failed`; const prevF = Number(mem[k2] || 0); const f = Number(st.failed || 0);
-    if (f !== prevF) { await remember(env, project, k2, f); if (!first && f > prevF) await notify(env, project, "job_failed", `${project} · ${name} 실패 +${f - prevF}`, `누적 ${f}건${site ? ` · ${site}` : ""} — 공장에서 단계를 누르면 사유가 보입니다`, { tag: `${project}:failed:${name}` }); }
+    if (f !== prevF) { await remember(env, project, k2, f); if (!firstStage && f > prevF) await notify(env, project, "job_failed", `${project} · ${name} 실패 +${f - prevF}`, `누적 ${f}건${site ? ` · ${site}` : ""} — 공장에서 단계를 누르면 사유가 보입니다`, { tag: `${project}:failed:${name}` }); }
     // cohorts done on this stage
     for (const [c, g] of Object.entries(st.groups || {})) {
-      if (g.total && g.done >= g.total) { const k3 = `cohort:${name}:${c}`; if (mem[k3] !== "1") { await remember(env, project, k3, 1); if (!first) await notify(env, project, "cohort_done", `${project} · ${c} ${name} 완료`, `${fmtN(g.done)} / ${fmtN(g.total)}${g.failed ? ` · 실패 ${g.failed}` : ""}`, { tag: `${project}:cohort:${c}` }); } }
+      if (g.total && g.done >= g.total) { const k3 = `cohort:${name}:${c}`; if (mem[k3] !== "1") { await remember(env, project, k3, 1); if (!firstCohort) await notify(env, project, "cohort_done", `${project} · ${c} ${name} 완료`, `${fmtN(g.done)} / ${fmtN(g.total)}${g.failed ? ` · 실패 ${g.failed}` : ""}`, { tag: `${project}:cohort:${c}` }); } }
     }
   }
   // milestones: late / overdue transitions (same rule as the viewer's deadline board)
@@ -142,7 +149,7 @@ export async function detectPipelineEvents(env, project, state, plan) {
     const date = Date.parse(m.date); let status = "ok";
     if (complete) status = "done"; else if (Date.now() > date) status = "overdue"; else if (eta && Date.parse(eta) > date) status = "late"; else if (!eta) status = "unknown";
     const k = `milestone:${m.name}`;
-    if (mem[k] !== status) { await remember(env, project, k, status); if (!first && (status === "late" || status === "overdue") && mem[k] !== "overdue") await notify(env, project, "milestone_late", `${project} · 🏁 ${m.name} ${status === "overdue" ? "기한 지남" : "늦어질 예정"}`, `목표 ${m.date}${eta ? ` · 예상 ${eta.slice(0, 10)}` : ""}`, { tag: `${project}:ms:${m.name}` }); }
+    if (mem[k] !== status) { await remember(env, project, k, status); if (!firstMs && (status === "late" || status === "overdue") && mem[k] !== "overdue") await notify(env, project, "milestone_late", `${project} · 🏁 ${m.name} ${status === "overdue" ? "기한 지남" : "늦어질 예정"}`, `목표 ${m.date}${eta ? ` · 예상 ${eta.slice(0, 10)}` : ""}`, { tag: `${project}:ms:${m.name}` }); }
   }
   await remember(env, project, "probe:lastAt", state.probedAt || nowIso());
   if (mem["probe:lost"] === "1") { await remember(env, project, "probe:lost", 0); await notify(env, project, "probe_lost", `${project} · 프로브 복구`, `${site || "계산 서버"}에서 다시 신호가 옵니다`, { tag: `${project}:probe` }); }
@@ -171,6 +178,11 @@ export async function detectDocsEvents(env, project, files, source) {
     await remember(env, project, k, latest);
     await notify(env, project, "docs", `${project} · 새 자료 ${fresh.length}개`, fresh.slice(0, 3).map(f => f.name || f.path).join(", ") + (fresh.length > 3 ? " …" : ""), { tag: `${project}:docs` });
   }
+}
+
+/** Recent notifications of a floor (what was sent or muted), newest first. */
+export async function recentNotifications(env, project, limit = 30) {
+  return (await env.DB.prepare("SELECT kind, title, body, sent, at FROM notify_log WHERE project=? ORDER BY id DESC LIMIT ?").bind(project, limit).all()).results || [];
 }
 
 // ---- HTTP handlers (login required; the floor must be readable by the person) ---------------------------------------

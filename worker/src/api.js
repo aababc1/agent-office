@@ -1,6 +1,7 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, unauthorized } from "./auth.js";
 import { driveEnabled, driveListing } from "./gdrive.js";
+import { recentNotifications } from "./push.js";
 import { json, timingSafeEqual } from "./util.js";
 import * as disc from "./discussions.js";
 
@@ -119,6 +120,11 @@ export async function docs(request, env, name) {
                            links: Array.isArray(cfg.links) ? cfg.links : [], branch, repo,
                            uploadUrl: repo ? `https://github.com/${repo}/upload/${encodeURIComponent(branch)}/docs` : null,
                            folderUrl: repo ? `https://github.com/${repo}/tree/${encodeURIComponent(branch)}/docs` : null, files }), g.setCookie);
+}
+
+export async function notifications(request, env, name) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  return withCookie(json({ notifications: await recentNotifications(env, name) }), g.setCookie);
 }
 
 // ---- discussions (GitHub Discussions on the data repo, with the person's own token)

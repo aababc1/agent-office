@@ -1,6 +1,6 @@
 // Agent Office Worker: serves the viewer (static assets), GitHub login, read API, WebSocket, ingest.
 import { callback, login, logout } from "./auth.js";
-import { discussions, docs, floors, me, pipeline, plan, project, sessionData, ws } from "./api.js";
+import { discussions, docs, floors, me, notifications, pipeline, plan, project, sessionData, ws } from "./api.js";
 import { direct, webhook } from "./ingest.js";
 import { json } from "./util.js";
 import { diag, resync } from "./admin.js";
@@ -28,6 +28,7 @@ export default {
       if ((x = /^\/api\/projects\/([^/]+)\/plan$/.exec(p))) return plan(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/pipeline$/.exec(p))) return pipeline(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/docs$/.exec(p))) return docs(request, env, decodeURIComponent(x[1]));
+      if ((x = /^\/api\/projects\/([^/]+)\/notifications$/.exec(p))) return notifications(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/discussions$/.exec(p))) return discussions(request, env, decodeURIComponent(x[1]), null);
       if ((x = /^\/api\/projects\/([^/]+)\/discussions\/(\d+)\/comments$/.exec(p)) && m === "POST") return discussions(request, env, decodeURIComponent(x[1]), Number(x[2]));
       if ((x = /^\/api\/projects\/([^/]+)\/discussions\/(\d+)$/.exec(p))) return discussions(request, env, decodeURIComponent(x[1]), Number(x[2]));
