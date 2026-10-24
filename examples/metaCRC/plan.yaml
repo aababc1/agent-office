@@ -146,8 +146,8 @@ docs:
 # Dates are the project's own; fill them in. `stages` = what must be complete for the milestone to count.
 # Targets set 2026-10-23: everything within one month. Dates are the project's to change.
 milestones:
-  - {name: "prefetch 완료 (8,420 run)",  date: 2026-10-27, stages: [prefetch]}
-  - {name: "QC 완료 (25 코호트)",         date: 2026-11-02, stages: [dump, qc]}
+  - {name: "prefetch 완료 (8,420 run)",  date: 2026-10-30, stages: [prefetch]}          # NCBI 속도 40–60 run/h 기준
+  - {name: "QC 완료 (25 코호트)",         date: 2026-11-04, stages: [dump, qc]}
   - {name: "조립 완료 (7,595 샘플)",      date: 2026-11-16, stages: [merge, assemble]}
   - {name: "비닝 완료",                   date: 2026-11-21, stages: [bin]}
   - {name: "MAG 카탈로그 (전체 완료)",    date: 2026-11-23, stages: [mag_qc]}
