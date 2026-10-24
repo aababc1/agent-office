@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# metaCRC — §03 dump on K-BDS: fasterq-dump → fastq.gz, fed continuously as prefetch finishes (no waiting for all 8,420).
+# metaCRC — §03 dump on K-BDS: fasterq-dump → fastq.gz, one BioProject at a time (DUMP_MODE=cohort, default):
+# a cohort is submitted as its own job(s) — named metacrc-dump:<BioProject> — once none of its runs is still downloading,
+# so progress reads per BioProject. DUMP_MODE=stream instead feeds any validated run as it arrives (mixed cohorts).
 # Agreed 2026-10-23: fasterq-dump default split mode (= split-3), 4 threads per run, pigz, verify (gzip -t), cohort subfolders
 # $FQ_DIR/<BioProject>/<run>_{1,2}.fastq.gz, delete $SRA_DIR/<run> after a verified dump, everything (temp too) under $HOME.
 # Node packing (K-BDS = exclusive nodes, node-hour billing): 1 sbatch = 1 node, PER_NODE runs at a time × THREADS each.
 # Failure codes as in the runbook: NOT_VALIDATED | NO_SRA | DUMP_FAIL  → $LOG_DIR/dump.FAILED ("<run> <code>").
 #
 # Usage (login node, ~/office):
-#   ./03_dump_kbds.sh pending            runs ready for dump, by cohort (validated, no fastq, not FAILED, not in a live chunk)
-#   ./03_dump_kbds.sh submit [N]         submit up to N node jobs now (default: what pending needs, ≤ DUMP_MAX_NODES − live)
-#   ./03_dump_kbds.sh feed               loop in tmux: every DUMP_FEED_S, sweep finished chunks and submit for what is pending
+#   ./03_dump_kbds.sh pending            per cohort: total / validated / dumped / waiting, and READY (prefetch of that cohort finished)
+#   ./03_dump_kbds.sh submit [N]         submit up to N node jobs for READY cohorts (smallest first; ≤ DUMP_MAX_NODES − live)
+#   ./03_dump_kbds.sh submit N --cohort PRJ   force that cohort now, ready or not (its validated runs only)
+#   ./03_dump_kbds.sh feed               loop in tmux: every DUMP_FEED_S, sweep finished chunks and submit READY cohorts
 #   ./03_dump_kbds.sh status             per-cohort counts, live jobs, throughput, failures
 #   ./03_dump_kbds.sh retry              forget dump.FAILED (keeps a copy) so those runs become pending again
 #   ./03_dump_kbds.sh node <chunk>       (what sbatch runs) xargs -P PER_NODE over the chunk's runs
 #   ./03_dump_kbds.sh one <run>          (one run; called by `node`)
-# Knobs (export in 00_env_local.sh or the environment): DUMP_PART=cpu32-only DUMP_THREADS=4 DUMP_PER_NODE=(cores/threads)
+# Knobs (export in 00_env_local.sh or the environment): DUMP_MODE=cohort|stream DUMP_PART=cpu32-only DUMP_THREADS=4 DUMP_PER_NODE=(cores/threads)
 #   DUMP_CHUNK=160 (runs per node job) DUMP_MAX_NODES=5 DUMP_MIN_BATCH=16 DUMP_FEED_S=600 DUMP_TIME=24:00:00 DL_ENV=sra-tools
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -21,9 +24,9 @@ cd "$(dirname "$0")"
 source ./00_env_local.sh
 : "${USER:=$(id -un)}"
 : "${FQ_DIR:=$PROJ/fastq}" "${TMP_DIR:=$PROJ/tmp}" "${DL_ENV:=sra-tools}"
-: "${DUMP_PART:=cpu32-only}" "${DUMP_THREADS:=4}" "${DUMP_CHUNK:=160}" "${DUMP_MAX_NODES:=5}" "${DUMP_MIN_BATCH:=16}" "${DUMP_FEED_S:=600}" "${DUMP_TIME:=24:00:00}"
+: "${DUMP_MODE:=cohort}" "${DUMP_PART:=cpu32-only}" "${DUMP_THREADS:=4}" "${DUMP_CHUNK:=160}" "${DUMP_MAX_NODES:=5}" "${DUMP_MIN_BATCH:=16}" "${DUMP_FEED_S:=600}" "${DUMP_TIME:=24:00:00}"
 JOB=metacrc-dump
-CH="$PROJ/manifest/dump_chunks"; MAP="$PROJ/manifest/run_cohort.tsv"; FAILED="$LOG_DIR/dump.FAILED"; DONE_TSV="$LOG_DIR/dump_done.tsv"
+CH="$PROJ/manifest/dump_chunks"; MAP="$PROJ/manifest/run_cohort.tsv"; FAILED="$LOG_DIR/dump.FAILED"; DONE_TSV="$LOG_DIR/dump_done.tsv"; PF_FAILED="$LOG_DIR/prefetch.FAILED"
 mkdir -p "$FQ_DIR" "$TMP_DIR" "$LOG_DIR/dump" "$LOG_DIR/slurm" "$CH"
 
 # run → cohort map from the manifest (header names, not column numbers); rebuilt when the manifest is newer
@@ -35,7 +38,7 @@ mkmap() {
 cohort_of() { awk -F'\t' -v r="$1" '$1==r{print $2;exit}' "$MAP"; }
 
 # chunk bookkeeping: $CH/chunk.<id>.txt + chunk.<id>.job (sbatch id) + chunk.<id>.done (node finished)
-live_jobs() { squeue -h -u "$USER" -n "$JOB" -o '%i' 2>/dev/null; }
+live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB" 'index($2, j)==1{print $1}'; }
 sweep() {   # a chunk whose job is gone from squeue is finished (or died): its runs without fastq become pending again
   local live; live="$(live_jobs | tr '\n' ' ')"
   for j in "$CH"/chunk.*.job; do
@@ -59,29 +62,71 @@ pending_list() {   # stdout: "<run>\t<cohort>" sorted by cohort (manifest order 
   rm -f "$fl" "$inf" "$va" "$du"
 }
 
+# per-cohort table: cohort  total  prefetched  prefetch_failed  dumped  dump_failed  inflight  waiting  ready(1/0)
+# prefetched = validated now, or already dumped / dump-failed (their .sra is gone). READY = nothing of the cohort still downloading:
+# every run is prefetched or prefetch-failed.
+cohort_table() {
+  mkmap; sweep
+  local fl pf inf va du; fl="$(mktemp)"; pf="$(mktemp)"; inf="$(mktemp)"; va="$(mktemp)"; du="$(mktemp)"
+  cut -d' ' -f1 "$FAILED" 2>/dev/null | sort -u > "$fl"; cut -d' ' -f1 "$PF_FAILED" 2>/dev/null | sort -u > "$pf"; inflight > "$inf"; validated_runs > "$va"; dumped_runs > "$du"
+  awk -F'\t' -v L="$RUNLIST" -v FL="$fl" -v PF="$pf" -v IN="$inf" -v VA="$va" -v DU="$du" '
+    BEGIN{ while((getline l < L)>0){ if(l!="" && l!~/^#/) want[l]=1 } while((getline l < FL)>0) bad[l]=1; while((getline l < PF)>0) pbad[l]=1
+           while((getline l < IN)>0) inflt[l]=1; while((getline l < VA)>0) val[l]=1; while((getline l < DU)>0) dmp[l]=1 }
+    ($1 in want) { c=$2; tot[c]++
+      pre = ($1 in val) || ($1 in dmp) || ($1 in bad)
+      if (pre) v[c]++; else if ($1 in pbad) pf[c]++; else miss[c]++
+      if ($1 in dmp) d[c]++; else if ($1 in bad) df[c]++; else if ($1 in inflt) inf[c]++; else if ($1 in val) w[c]++ }
+    END{ for (c in tot) printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", c, tot[c], v[c]+0, pf[c]+0, d[c]+0, df[c]+0, inf[c]+0, w[c]+0, (miss[c]+0==0) }' "$MAP" | sort -t$'\t' -k2,2n
+  rm -f "$fl" "$pf" "$inf" "$va" "$du"
+}
+# runs of one cohort that are waiting (validated, no fastq, not FAILED, not inflight), manifest order
+cohort_waiting() { pending_list | awk -F'\t' -v c="$1" '$2==c{print $1}'; }
+
 node_cores() { sinfo -h -p "$DUMP_PART" -o '%c' 2>/dev/null | head -1; }
 
-submit() {
-  local want="${1:-0}" live n pend
-  pend="$(mktemp)"; pending_list > "$pend"; n=$(wc -l < "$pend")
-  live=$(live_jobs | wc -l)
-  local room=$(( DUMP_MAX_NODES - live )); [ "$room" -lt 0 ] && room=0
-  local need=$(( (n + DUMP_CHUNK - 1) / DUMP_CHUNK ))
-  [ "$want" -gt 0 ] && [ "$want" -lt "$need" ] && need=$want
-  [ "$need" -gt "$room" ] && need=$room
-  echo "[submit] pending $n runs · live jobs $live · submitting $need node job(s) on $DUMP_PART (chunk ≤ $DUMP_CHUNK)"
-  local k=0; local cores; cores="$(node_cores)"; [ -n "$cores" ] || cores=32
-  while [ "$k" -lt "$need" ]; do
+sbatch_chunk() {   # $1 = file of runs, $2 = job-name suffix (cohort or "mixed")
+  local f="$1" tag="$2" cores; cores="$(node_cores)"; [ -n "$cores" ] || cores=32
+  local jid; jid=$(sbatch --parsable -J "$JOB:$tag" -p "$DUMP_PART" -N 1 -n 1 -c "$cores" --exclusive -t "$DUMP_TIME" \
+                   -o "$LOG_DIR/slurm/dump-%j.out" --wrap "bash '$SELF' node '$f'" 2>&1) || { echo "[submit] sbatch failed: $jid" >&2; rm -f "$f"; return 1; }
+  echo "$jid" > "${f%.txt}.job"
+  echo "  job $jid  $JOB:$tag  ← $(wc -l < "$f") runs" >&2      # stderr: submit_runs' stdout is its job count
+}
+
+submit_runs() {   # $1 = file of runs, $2 = tag, $3 = max jobs → chunks of DUMP_CHUNK, returns jobs submitted
+  local src="$1" tag="$2" room="$3" k=0 n; n=$(wc -l < "$src")
+  while [ "$k" -lt "$room" ]; do
     local id f; id="$(date +%Y%m%d-%H%M%S)-$RANDOM"; f="$CH/chunk.$id.txt"
-    sed -n "$(( k * DUMP_CHUNK + 1 )),$(( (k + 1) * DUMP_CHUNK ))p" "$pend" | cut -f1 > "$f"
+    sed -n "$(( k * DUMP_CHUNK + 1 )),$(( (k + 1) * DUMP_CHUNK ))p" "$src" > "$f"
     [ -s "$f" ] || { rm -f "$f"; break; }
-    local jid; jid=$(sbatch --parsable -J "$JOB" -p "$DUMP_PART" -N 1 -n 1 -c "$cores" --exclusive -t "$DUMP_TIME" \
-                     -o "$LOG_DIR/slurm/dump-%j.out" --wrap "bash '$SELF' node '$f'" 2>&1) || { echo "[submit] sbatch failed: $jid"; rm -f "$f"; break; }
-    echo "$jid" > "$CH/chunk.$id.job"
-    echo "  job $jid ← $(wc -l < "$f") runs ($(cut -f2 <(grep -F -w -f "$f" "$MAP") | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s×%s ",$2,$1}'))"
+    sbatch_chunk "$f" "$tag" || break
     k=$((k + 1))
   done
-  rm -f "$pend"
+  echo "$k"
+}
+submit() {
+  local want="${1:-0}" only="${2:-}" live room
+  live=$(live_jobs | wc -l); room=$(( DUMP_MAX_NODES - live )); [ "$room" -lt 0 ] && room=0
+  [ "$want" -gt 0 ] && [ "$want" -lt "$room" ] && room=$want
+  if [ -n "$only" ]; then   # forced: this cohort's validated runs now, ready or not
+    local f; f="$(mktemp)"; cohort_waiting "$only" > "$f"
+    echo "[submit] cohort $only (forced) · $(wc -l < "$f") runs waiting · live jobs $live · room $room node(s) on $DUMP_PART"
+    submit_runs "$f" "$only" "$room" >/dev/null; rm -f "$f"; return
+  fi
+  if [ "$DUMP_MODE" = stream ]; then
+    local f; f="$(mktemp)"; pending_list | cut -f1 > "$f"
+    echo "[submit] stream · $(wc -l < "$f") runs waiting · live jobs $live · room $room node(s) on $DUMP_PART"
+    submit_runs "$f" mixed "$room" >/dev/null; rm -f "$f"; return
+  fi
+  # cohort mode: READY cohorts with waiting runs, smallest first, each cohort its own job(s)
+  local tbl; tbl="$(mktemp)"; cohort_table > "$tbl"
+  local ready; ready=$(awk -F'\t' '$9==1 && $8>0' "$tbl" | wc -l)
+  echo "[submit] cohort mode · READY cohorts with waiting runs: $ready · live jobs $live · room $room node(s) on $DUMP_PART (chunk ≤ $DUMP_CHUNK)"
+  while IFS=$'\t' read -r c tot v pf d df inf w rd; do
+    [ "$room" -le 0 ] && break
+    local f; f="$(mktemp)"; cohort_waiting "$c" > "$f"
+    local k; k=$(submit_runs "$f" "$c" "$room"); rm -f "$f"; room=$(( room - k ))
+  done < <(awk -F'\t' '$9==1 && $8>0' "$tbl")
+  rm -f "$tbl"
 }
 
 one() {   # one run on a compute node — the per-run recipe (§03)
@@ -108,24 +153,28 @@ one() {   # one run on a compute node — the per-run recipe (§03)
 }
 
 case "${1:-}" in
-pending) pending_list | awk -F'\t' '{n[$2]++} END{for(c in n) printf "%6d  %s\n", n[c], c}' | sort -rn; echo "total $(pending_list | wc -l)" ;;
-submit)  submit "${2:-0}" ;;
+pending)
+  printf '%-14s %6s %6s %5s %6s %5s %5s %6s  %s\n' cohort total prefd pfail dumped dfail infl wait ready
+  cohort_table | awk -F'\t' '{printf "%-14s %6d %6d %5d %6d %5d %5d %6d  %s\n", $1,$2,$3,$4,$5,$6,$7,$8,($9?"READY":"")}'
+  echo "waiting total: $(pending_list | wc -l) runs · mode $DUMP_MODE" ;;
+submit)  if [ "${3:-}" = --cohort ]; then submit "${2:-0}" "$4"; elif [ "${2:-}" = --cohort ]; then submit 0 "$3"; else submit "${2:-0}"; fi ;;
 feed)
-  echo "[feed] every ${DUMP_FEED_S}s: sweep + submit (≤ $DUMP_MAX_NODES nodes on $DUMP_PART, chunk $DUMP_CHUNK, min batch $DUMP_MIN_BATCH)"
+  echo "[feed] mode $DUMP_MODE · every ${DUMP_FEED_S}s: sweep + submit (≤ $DUMP_MAX_NODES nodes on $DUMP_PART, chunk $DUMP_CHUNK)"
   while true; do
-    n=$(pending_list | wc -l); live=$(live_jobs | wc -l)
-    if { [ "$n" -ge "$DUMP_MIN_BATCH" ] || { [ "$n" -gt 0 ] && [ "$live" -eq 0 ]; }; } && [ "$live" -lt "$DUMP_MAX_NODES" ]; then submit 0; else echo "$(date -u +%FT%TZ) pending $n · live $live · nothing to do"; fi
+    live=$(live_jobs | wc -l)
+    if [ "$DUMP_MODE" = stream ]; then n=$(pending_list | wc -l); else n=$(cohort_table | awk -F'\t' '$9==1{s+=$8} END{print s+0}'); fi
+    if { [ "$n" -ge "$DUMP_MIN_BATCH" ] || { [ "$n" -gt 0 ] && [ "$live" -eq 0 ]; }; } && [ "$live" -lt "$DUMP_MAX_NODES" ]; then submit 0; else echo "$(date -u +%FT%TZ) ready-to-dump $n · live $live · nothing to do"; fi
     sleep "$DUMP_FEED_S"
   done ;;
 status)
   mkmap; sweep
   T=$(wc -l < "$RUNLIST"); V=$(find "$SRA_DIR" -maxdepth 2 -name .validated 2>/dev/null | wc -l); D=$(find "$FQ_DIR" -mindepth 2 -maxdepth 2 -name '*_1.fastq.gz' 2>/dev/null | wc -l); F=$(sort -u "$FAILED" 2>/dev/null | wc -l)
   printf 'dumped %6d / %d   validated-waiting %d   failed %d   inflight %d\n' "$D" "$T" "$(pending_list | wc -l)" "$F" "$(inflight | wc -l)"
-  echo "jobs:"; squeue -u "$USER" -n "$JOB" -h -o '  %i %T %M %N %r' 2>/dev/null
+  echo "jobs:"; squeue -u "$USER" -h -o '  %i %j %T %M %N %r' 2>/dev/null | grep -F " $JOB" 
   if [ -s "$DONE_TSV" ]; then awk -F'\t' -v now="$(date +%s)" '{cmd="date -d \""$2"\" +%s"; cmd|getline t; close(cmd); if(now-t<=3600){n++;b+=$4}} END{printf "last 1h: %d runs, %.1f GB fastq.gz → %d runs/h\n", n, b/1e9, n}' "$DONE_TSV"; fi
-  echo "by cohort (dumped / paired runs):"; du="$(mktemp)"; dumped_runs > "$du"
-  awk -F'\t' -v L="$RUNLIST" -v DU="$du" 'BEGIN{while((getline l<L)>0) want[l]=1; while((getline l<DU)>0) dmp[l]=1} ($1 in want){tot[$2]++; if($1 in dmp) d[$2]++} END{for(c in tot) printf "  %-14s %5d / %5d%s\n", c, d[c]+0, tot[c], (d[c]==tot[c]?"  ✓":"")}' "$MAP" | sort -k4 -rn; rm -f "$du"
-  [ -s "$FAILED" ] && { echo "failed reasons:"; awk '{print $2}' "$FAILED" | sort | uniq -c; } ;;
+  echo "by cohort (dumped / total · prefetched · state):"
+  cohort_table | awk -F'\t' '{st=($5>=$2)?"✓ done":($7>0?"▶ running":($9?"ready":"prefetching")); printf "  %-14s %5d / %5d   prefetched %5d   %s\n", $1, $5, $2, $3, st}' | sort -k2,2nr
+  [ -s "$FAILED" ] && { echo "failed reasons:"; awk '{print $2}' "$FAILED" | sort | uniq -c; }; true ;;
 retry)   [ -s "$FAILED" ] && { cp "$FAILED" "$FAILED.$(date +%Y%m%d-%H%M%S)"; : > "$FAILED"; echo "[retry] FAILED cleared (copy kept); they are pending again — feed/submit picks them up"; } || echo "nothing failed" ;;
 node)
   # batch jobs do not read .bashrc: find conda by path

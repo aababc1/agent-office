@@ -443,8 +443,11 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
     if sq:
         for s in stages.values():
             job = s.pop("_job", None)
-            if job and job in sq["byName"]:
-                s["running"] = sq["byName"][job].get("RUNNING", 0); s["pending"] = sq["byName"][job].get("PENDING", 0)
+            if job:   # the runner's job name, or that name with a ":<cohort>" suffix (03_dump_kbds.sh names jobs per BioProject)
+                hits = [v for n, v in sq["byName"].items() if n == job or n.startswith(job + ":")]
+                if hits:
+                    s["running"] = sum(v.get("RUNNING", 0) for v in hits); s["pending"] = sum(v.get("PENDING", 0) for v in hits)
+                    s["jobsByCohort"] = {n.split(":", 1)[1]: v for n, v in sq["byName"].items() if n.startswith(job + ":")} or None
     else:
         for s in stages.values():
             s.pop("_job", None)

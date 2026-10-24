@@ -67,14 +67,16 @@ plan.yaml의 `groups: {file: $MANIFEST, columns: {run: run_accession, sample: sa
 
 ## 6. §03 dump — `03_dump_kbds.sh` (prefetch 끝난 런부터 바로)
 
-prefetch 전체를 기다리지 않는다. 로그인 노드 tmux에서 `feed`가 10분마다 "validated인데 fastq 없는 런"을 코호트 순으로 모아
-노드 잡(sbatch 1개 = 노드 1개, `xargs -P (cores/4)` × 4 thread)을 띄운다. 런 하나 = `fasterq-dump`(기본 split-3) → `pigz -p 4` → `gzip -t`
+**BioProject 단위로 돈다**(`DUMP_MODE=cohort`, 기본). 로그인 노드 tmux의 `feed`가 10분마다, prefetch가 **끝난 코호트**(그 코호트 런 중
+아직 내려받는 중인 게 없음 — 실패한 런은 끝난 것으로 침)부터 작은 순서로, 코호트 하나를 그 코호트만 담은 노드 잡(`metacrc-dump:<BioProject>`,
+sbatch 1개 = 노드 1개, `xargs -P (cores/4)` × 4 thread)으로 띄운다. 큰 코호트는 160런씩 여러 잡. 특정 코호트를 prefetch가 덜 끝났어도 지금
+돌리려면 `./03_dump_kbds.sh submit --cohort PRJEB6070`. 코호트 안 가리고 validated 런을 바로바로 흘리는 옛 방식은 `DUMP_MODE=stream`. 런 하나 = `fasterq-dump`(기본 split-3) → `pigz -p 4` → `gzip -t`
 → `_2` 먼저, `_1` 마지막에 mv(= 완료 마커) → `$SRA_DIR/<run>` 삭제. 실패는 `dump.FAILED`에 `NOT_VALIDATED|NO_SRA|DUMP_FAIL`.
 임시 파일은 `$PROJ/tmp/<run>`(home 밑), 끝나면 삭제.
 
 ```bash
 conda install -n sra-tools -c conda-forge pigz -y        # 한 번
-./03_dump_kbds.sh pending                                # 코호트별 대기 런 수
+./03_dump_kbds.sh pending                                # 코호트별: total/prefetched/dumped/waiting, READY 표시
 DUMP_CHUNK=16 ./03_dump_kbds.sh submit 1                 # 첫 잡은 작게: 노드 1개 · 16런으로 동작 확인
 ./03_dump_kbds.sh status                                 # dumped/validated-waiting/failed, 잡, 시간당 처리량, 코호트별 ✓
 tmux new -s dump -d 'cd ~/office && ./03_dump_kbds.sh feed 2>&1 | tee -a ~/metaCRC/logs/dump.feed.log'   # 상시
