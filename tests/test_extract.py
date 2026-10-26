@@ -351,3 +351,29 @@ def test_probe_groups_cohort_paths_and_counts(tmp_path, monkeypatch):
     assert st["done"] == 2 and st["total"] == 3 and st["failed"] == {"R2": "DUMP_FAIL"}
     assert st["groups"] == {"PRJA": {"total": 2, "done": 1, "failed": 1}, "PRJB": {"total": 1, "done": 1, "failed": 0}} and r["cohorts"] == ["PRJA", "PRJB"]
     s = to_pipeline_state(r, "t"); assert s["stages"]["dump"]["groups"]["PRJA"]["done"] == 1 and s["cohorts"] == ["PRJA", "PRJB"]
+
+
+def test_probe_hybrid_stage_markers_plus_process_with_globbed_runs(tmp_path, monkeypatch):
+    """qc: `.done` markers count completion; the named process gives running/failed tasks; one trace per cohort run dir (globs)."""
+    import time as _t
+    from office_extract.probe import probe, to_pipeline_state
+    monkeypatch.setenv("PATH", str(tmp_path)); d = tmp_path
+    (d / "manifest").mkdir(); (d / "manifest" / "run_manifest.tsv").write_text("run_accession\tsample_accession\tcohort_accession\nR1\tS1\tPRJA\nR2\tS2\tPRJA\nR3\tS3\tPRJB\n"); (d / "manifest" / "runs.txt").write_text("R1\nR2\nR3\n")
+    (d / "qc" / "PRJA").mkdir(parents=True); (d / "qc" / "PRJA" / "R1.done").write_text("x")
+    hdr = "task_id\thash\tnative_id\tprocess\ttag\tname\tstatus\texit\tattempt\tcpus\tmemory\tsubmit\tstart\tcomplete\tduration\trealtime\t%cpu\tpeak_rss\trchar\twchar\tworkdir\n"
+    ms = int(_t.time() * 1000)
+    for coh, rows in {"PRJA": [("fastp_cleanifier", "R1", "COMPLETED", "0"), ("load_index", "-", "COMPLETED", "0"), ("fastp_cleanifier", "R2", "FAILED", "1")], "PRJB": [("fastp_cleanifier", "R3", "FAILED", "1")]}.items():
+        (d / "runs" / "qc" / coh).mkdir(parents=True)
+        with open(d / "runs" / "qc" / coh / "trace.txt", "w") as f:
+            f.write(hdr)
+            for i, (proc, tag, st, ex) in enumerate(rows): f.write(f"{i}\taa/bb\t1\t{proc}\t{tag}\t{proc} ({tag})\t{st}\t{ex}\t1\t4\t-\t{ms-100000}\t{ms-90000}\t{ms-10000}\t76000\t76000\t300%\t1000\t1\t1\t{d}/work/qc/{coh}/aa/bb\n")
+    wd = d / "work" / "qc" / "PRJB" / "cc" / "dd"; wd.mkdir(parents=True); (wd / ".command.begin").write_text(""); (wd / ".command.run").write_text("#!/bin/bash\n# NEXTFLOW TASK: fastp_cleanifier (R3)\n")   # R3 retrying
+    plan = {"project": "t", "where": "kbds", "sites": {"kbds": {"name": "K"}}, "paths": {"PROJ": str(d), "MANIFEST": "$PROJ/manifest/run_manifest.tsv", "QC_DIR": "$PROJ/qc"},
+            "pipeline": {"kind": "nextflow", "trace": "$PROJ/runs/*/*/trace.txt", "work": "$PROJ/work/*/*", "log": "$PROJ/runs/*/*/.nextflow.log"},
+            "groups": {"file": "$MANIFEST", "columns": {"run": "run_accession", "sample": "sample_accession", "cohort": "cohort_accession"}},
+            "stages": [{"name": "qc", "unit": "run", "units": {"file": "$PROJ/manifest/runs.txt"}, "done": {"kind": "file", "path": "$QC_DIR/{cohort}/{run}.done"},
+                        "nextflow": {"process": ["fastp_cleanifier"], "aux": ["load_index", "qc_summary"]}, "est": {"s_per_unit": 76}, "runner": {"kind": "slurm", "job": "metacrc-qc"}}]}
+    r = probe(plan, "kbds", "kbds"); st = r["stages"]["qc"]
+    assert st["done"] == 1 and list(st["failed"]) == ["R2"] and st["running"] == 1          # R3 is retrying, not failed
+    assert r["nextflow"]["traceFiles"] == 2 and r["unplanned"] == {}                          # load_index is aux, not "unplanned"
+    s = to_pipeline_state(r, "kbds"); assert s["stages"]["qc"]["estS"] == 76 and s["stages"]["qc"]["groups"]["PRJA"]["done"] == 1

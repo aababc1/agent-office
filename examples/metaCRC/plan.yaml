@@ -25,12 +25,12 @@ sites:
     paths:
       PROJ: $HOME/metaCRC               # /home01 is Lustre (no quota); the guide keeps user work under home
 pipeline:
-  kind: nextflow                        # metaFun on the Slurm executor
-  trace: $PROJ/run/trace.txt            # nextflow run ... -with-trace $PROJ/run/trace.txt   (one line per finished task)
-  log: $PROJ/run/.nextflow.log          # run start/end, "Submitted process", "Cached process", errors
-  work: $PROJ/work                      # task dirs: .command.begin = started, .exitcode = finished (shows in-flight tasks)
-  # Stage ↔ Nextflow process mapping goes in each stage's `done: {kind: nextflow, process: [...]}` once the
-  # process names are known from a real trace. Until then, processes seen in the trace are reported as-is.
+  kind: nextflow                        # metaFun, one `nextflow run` per node job (local executor), one run dir per cohort
+  trace: "$PROJ/runs/*/*/trace.txt"     # runs/<stage>/<BioProject>[.<k>]/trace.txt  (globs: every cohort run is read)
+  log: "$PROJ/runs/*/*/.nextflow.log"
+  work: "$PROJ/work/*/*"                # work/<stage>/<BioProject>: .command.begin = started, .exitcode = finished (in-flight tasks)
+  # A stage names its process under `nextflow: {process: [...]}` — running/failed tasks and task time come from the trace,
+  # completion from the stage's file marker. Processes nobody names are reported as `unplanned`; `aux` lists helpers to ignore.
 
 # Same variables as 00_env.sh. $USER comes from the environment on the probe host.
 paths:
@@ -89,14 +89,15 @@ stages:
     runner: {kind: slurm, job: metacrc-dump, nodes: 1, per_node: 8, threads: 4, time_h: 24, load: "$PROJ/manifest/dump_chunks/chunk.*.load"}   # 03_dump_kbds.sh: 1 sbatch = 1 node per cohort; .load = node heartbeat (CPU use)
 
   - name: qc
-    desc: "fastp + host removal (04_qc.sbatch)"
+    desc: "fastp → Cleanifier(사람 리드 제거) → bgzip (metaFun RAWREAD_QC_cleanifier.nf, 04_qc_kbds.sh)"
     icon: sieve
     unit: run
     units: {file: $RUNLIST}
     after: [dump]
-    done: {kind: file, path: "$QC_DIR/{cohort}/{run}_1.fastq.gz"}
-    failed: {log: "$LOG_DIR/qc.FAILED"}                  # NO_FASTQ | FASTP_FAIL
-    runner: {kind: slurm, job: metacrc-qc, array: 1000, cpus: 8, mem: 32G, time_h: 8}
+    done: {kind: file, path: "$QC_DIR/{cohort}/{run}.done"}     # written last, after <run>_1/_2.fastq.gz are renamed in place (docs/metacrc_qc_settings.md §9)
+    nextflow: {process: [fastp_cleanifier], aux: [load_index, qc_summary]}   # per-run process; aux = once per job / cohort
+    est: {s_per_unit: 76, basis: "PRJNA531273 30 runs, cpu32-only, 2026-10-27 (60 s/Gb)"}
+    runner: {kind: slurm, job: metacrc-qc, nodes: 1, per_node: 8, threads: 4, time_h: 96, load: "$PROJ/manifest/qc_chunks/chunk.*.load"}
 
   - name: merge
     desc: "multi-run samples → one R1/R2 (05_merge.sbatch)"

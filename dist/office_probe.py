@@ -854,16 +854,24 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
     my_stages = stages_for_site(plan, site_key)
     report: dict[str, Any] = {"v": 1, "project": plan["project"], "at": iso(now), "site": site.get("name") or site_key, "siteKey": site_key, "stages": {}, "unplanned": {}}
 
-    # 1) Nextflow
+    # 1) Nextflow — `trace`/`work`/`log` may be globs (one run directory per cohort: runs/<stage>/<cohort>/trace.txt)
     trace_path = expand_vars(str(pipe.get("trace", "")), paths) if pipe.get("trace") else ""
-    rows = read_trace(trace_path) if trace_path else []
+    trace_files = sorted(glob.glob(trace_path)) if trace_path else []
+    rows: list[dict[str, Any]] = []
+    for tf in trace_files:
+        rows.extend(read_trace(tf))
     procs = summarize_trace(rows) if rows else {}
-    inflight = inflight_tasks(expand_vars(str(pipe.get("work", "")), paths)) if pipe.get("work") else []
-    nflog = read_nextflow_log(expand_vars(str(pipe.get("log", "")), paths)) if pipe.get("log") else {}
+    work_pat = expand_vars(str(pipe.get("work", "")), paths) if pipe.get("work") else ""
+    inflight: list[dict[str, Any]] = []
+    for wd in (sorted(glob.glob(work_pat)) if work_pat else []):
+        inflight.extend(inflight_tasks(wd))
+    log_pat = expand_vars(str(pipe.get("log", "")), paths) if pipe.get("log") else ""
+    log_files = sorted(glob.glob(log_pat), key=lambda f: os.path.getmtime(f)) if log_pat else []
+    nflog = read_nextflow_log(log_files[-1]) if log_files else {}
     inflight_by_proc: dict[str, int] = {}
     for t in inflight:
         inflight_by_proc[t["process"]] = inflight_by_proc.get(t["process"], 0) + 1
-    report["nextflow"] = {"trace": os.path.basename(trace_path) if trace_path else None, "tasks": len(rows), "processes": procs,
+    report["nextflow"] = {"trace": os.path.basename(trace_path) if trace_path else None, "traceFiles": len(trace_files), "tasks": len(rows), "processes": procs,
                           "inflight": inflight[:100], "inflightByProcess": inflight_by_proc, "log": nflog or None}
 
     # 2) plan stages: markers first, nextflow mapping second, "implied by later stage" last
@@ -902,12 +910,25 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
             job = (st.get("runner") or {}).get("job")
             s["running"] = 0  # filled from squeue below when the job name matches
             s["_job"] = job
+            # markers say what is done; a Nextflow process (if named) says what is running / failed / how long a task takes
+            pnames = [p for p in ((st.get("nextflow") or {}).get("process") or [])]
+            mapped_procs.update((st.get("nextflow") or {}).get("aux") or [])      # per-job/per-cohort helpers: known, not counted
+            if pnames:
+                mapped_procs.update(pnames)
+                done_set = set(s.get("doneIds") or []); retrying = {t["tag"] for t in inflight if t["process"] in pnames}
+                fails = {t: r for p in pnames for t, r in procs.get(p, {}).get("tags_failed", {}).items() if t not in done_set and t not in retrying}
+                s["failed"] = {**(s.get("failed") or {}), **fails}
+                s["running"] = sum(inflight_by_proc.get(p, 0) for p in pnames); s["_nf_running"] = True
+                rt = [procs.get(p, {}).get("realtimeS") for p in pnames if procs.get(p, {}).get("realtimeS")]
+                s["taskS"] = rt[0] if len(rt) == 1 else ({"p50": _pct([x["p50"] for x in rt if x["p50"]], .5)} if rt else None)
+                s["processes"] = pnames
             loadglob = (st.get("runner") or {}).get("load")
             if loadglob:
                 s["nodes"] = read_node_loads(expand_vars(str(loadglob), paths), now)
                 if s["nodes"]:
                     s["cpuUtil"] = round(sum(n["util"] for n in s["nodes"]) / len(s["nodes"]), 3)
         s["rates"] = rates(done_at, now)
+        est = (st.get("est") or {}); s["estS"] = est.get("s_per_unit")
         remaining = (s["total"] - s["done"] - len(s.get("failed") or {})) if s.get("total") is not None else None
         s["remaining"] = remaining
         s["eta"] = eta(remaining, done_at, now) if remaining is not None else None
@@ -950,11 +971,13 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
             if job:   # the runner's job name, or that name with a ":<cohort>" suffix (03_dump_kbds.sh names jobs per BioProject)
                 hits = [v for n, v in sq["byName"].items() if n == job or n.startswith(job + ":")]
                 if hits:
-                    s["running"] = sum(v.get("RUNNING", 0) for v in hits); s["pending"] = sum(v.get("PENDING", 0) for v in hits)
+                    if not s.pop("_nf_running", False):
+                        s["running"] = sum(v.get("RUNNING", 0) for v in hits)
+                    s["pending"] = sum(v.get("PENDING", 0) for v in hits)
+                    s["nodeJobs"] = sum(v.get("RUNNING", 0) for v in hits)
                     s["jobsByCohort"] = {n.split(":", 1)[1]: v for n, v in sq["byName"].items() if n.startswith(job + ":")} or None
-    else:
-        for s in stages.values():
-            s.pop("_job", None)
+    for s in stages.values():
+        s.pop("_job", None); s.pop("_nf_running", None)
     report["cluster"] = {"squeue": sq, "sinfo": si,
                          "canSubmit": (any(p["idle"] > 0 for p in si["partitions"].values() if p.get("mine")) if si and si["partitions"] else None)}
 
@@ -976,7 +999,8 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
                     "running": s.get("running", 0), "pending": s.get("pending", 0), "ratio": s.get("ratio"), "eta": s.get("eta"),
                     "rates": s.get("rates"), "lastAt": s.get("lastAt"), "desc": s.get("desc"), "after": s.get("after"),
                     "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"], "groups": s.get("groups"),
-                    "nodes": s.get("nodes"), "cpuUtil": s.get("cpuUtil"), "jobsByCohort": s.get("jobsByCohort")}
+                    "nodes": s.get("nodes"), "cpuUtil": s.get("cpuUtil"), "jobsByCohort": s.get("jobsByCohort"), "nodeJobs": s.get("nodeJobs"),
+                    "estS": s.get("estS"), "processes": s.get("processes")}
     jobs = {}
     for name, s in report["stages"].items():
         for unit, reason in list((s.get("failed") or {}).items())[:200]:

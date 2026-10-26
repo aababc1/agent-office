@@ -85,6 +85,27 @@ tmux new -s dump -d 'cd ~/office && ./03_dump_kbds.sh feed 2>&1 | tee -a ~/metaC
 손잡이(00_env_local.sh에 export): `DUMP_PART`(기본 cpu32-only, 0.5 노드시간/h) · `DUMP_MAX_NODES`(5) · `DUMP_CHUNK`(160런/잡) · `DUMP_MIN_BATCH`(16) · `DUMP_FEED_S`(600) · `DUMP_TIME`(24:00:00).
 죽은 잡의 청크는 다음 `feed`에서 자동으로 대기열로 돌아온다(끝난 런은 파일이 있으니 건너뜀).
 
+## 6b. §04 QC — `04_qc_kbds.sh` (metaFun `RAWREAD_QC_cleanifier.nf`, 2026-10-27)
+
+**코호트 단위**: dump가 정리된 코호트(모든 런이 dumped · dump-FAILED · prefetch-FAILED 중 하나이고 dumped가 1개 이상)부터 작은 순서로
+노드 잡 하나(`metacrc-qc:<BioProject>`, sbatch 1개 = 노드 1개, `--exclusive`)를 띄우고, 그 안에서 metaFun의 Nextflow를 **그 코호트만** 돌린다:
+`make_samplesheet.py --cohort $c [--exclude manifest/fastq_check/$c.bad_runs.txt]` → `$PROJ/runs/$c/samplesheet.csv` →
+`nextflow run $METAFUN_DIR/nf_scripts/RAWREAD_QC_cleanifier.nf -c $METAFUN_DIR/config/kbds.config -profile kbds --samplesheet … --outdir $QC_DIR --run_dir $PROJ/runs/$c --work_dir $PROJ/work/$c --cleanifier_index $QC_INDEX -resume`,
+끝나면 `cleanifier remove --name $QC_SHM_NAME`(EXIT trap에도). 완료 마커는 metaFun이 쓰는 `$QC_DIR/<BioProject>/<run>.done`.
+metaFun 쪽 접점(브랜치 `kbds-rawreadqc`, env `metacrc-qc`, 프로세스 `load_index`·`fastp_cleanifier`·`qc_summary`)은 프로젝트 문서 `claude/kbds.md` "metaFun 측 확정" 절이 기준이고, 이 스크립트는 그 접점만 쓴다(metaFun 자체는 건드리지 않는다).
+
+plan.yaml의 qc 단계는 **하이브리드**다: 파일 마커(`qc/{cohort}/{run}.done`)가 done을 세고, `nextflow: {process: [fastp_cleanifier], aux: [load_index, qc_summary]}`가
+running/failed/작업시간을 trace에서 가져온다. 코호트별 trace·work·log는 `pipeline:` 블록의 glob(`$PROJ/runs/*/*/trace.txt` 등)으로 모두 합쳐 읽는다.
+`est: {s_per_unit: 76}`(PRJNA531273 30런 실측, cpu32-only)는 측정 ETA가 잡히기 전 뷰어의 "추정" 시간이다(남은 런 × 76 s ÷ (노드당 8 × 노드 수)).
+
+```bash
+./04_qc_kbds.sh pending                                  # 코호트별: total/dumped/settled/qc_done/live, READY 표시
+./04_qc_kbds.sh submit 1                                 # READY 코호트 하나를 노드 1개로 (처음엔 작은 코호트로 확인)
+./04_qc_kbds.sh status                                   # .done 수, 잡, 코호트별 ✓
+tmux new -s qc -d 'cd ~/office && ./04_qc_kbds.sh feed 2>&1 | tee -a ~/metaCRC/logs/qc.feed.log'   # 상시
+```
+손잡이(00_env_local.sh에 export): `METAFUN_DIR`(`$HOME/metaFun`) · `QC_ENV`(`metacrc-qc`) · `QC_INDEX`(Cleanifier 인덱스 prefix) · `QC_SHM_NAME`(인덱스 basename) · `QC_PART`(`cpu32-only cpu64-only`) · `QC_MAX_NODES`(5) · `QC_TIME`(96:00:00) · `QC_FEED_S`(600) · `QC_NF_ARGS`.
+
 ## 7. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
 
 `runs_paired.txt`(8,420, PAIRED만)가 모든 런 단위 단계의 목록이다. `runs_single_excluded.txt`에 빠진 2,061개를 남겨 둔다. 런북의 03_dump 이후 sbatch 스크립트도 `RUNLIST`를 `runs_paired.txt`로 바꿔야 한다(00_env.sh 한 줄).
