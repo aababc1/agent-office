@@ -26,7 +26,8 @@ source ./00_env_local.sh
 : "${FQ_DIR:=$PROJ/fastq}" "${QC_DIR:=$PROJ/qc}" "${METAFUN_DIR:=$HOME/metaFun}" "${QC_ENV:=metacrc-qc}"
 : "${QC_INDEX:=$PROJ/db/cleanifier/t2t_pangenome_hla_variants_cdna_cleanifier_index_k29_w33}"
 : "${QC_SHM_NAME:=$(basename "$QC_INDEX")}" "${QC_PART:=cpu32-only cpu64-only}" "${QC_MAX_NODES:=5}" "${QC_TIME:=96:00:00}" "${QC_FEED_S:=600}" "${QC_NF_ARGS:=}"
-JOB=metacrc-qc
+JOB=qc; SEP=_          # job names qc_<BioProject> — the same convention as metaFun's driver (scripts/rawreadqc/kbds_submit_all.sh),
+                       # so the two never double-submit a cohort (each sees the other's job) and plan.yaml matches both
 MAP="$PROJ/manifest/run_cohort.tsv"; CH="$PROJ/manifest/qc_chunks"; RUNS="$PROJ/runs/qc"; WORK="$PROJ/work/qc"
 DUMP_FAILED="$LOG_DIR/dump.FAILED"; PF_FAILED="$LOG_DIR/prefetch.FAILED"
 mkdir -p "$QC_DIR" "$CH" "$RUNS" "$WORK" "$LOG_DIR"
@@ -36,7 +37,7 @@ mkmap() {
     awk -F'\t' 'NR==1{for(i=1;i<=NF;i++){if($i=="run_accession")r=i;if($i=="cohort_accession")c=i};next} r&&c&&$r!=""{print $r"\t"$c}' "$MANIFEST" > "$MAP.tmp" && mv "$MAP.tmp" "$MAP"
   fi
 }
-live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB" 'index($2, j)==1{print $1"\t"substr($2, length(j)+2)}'; }   # id<TAB>cohort
+live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB$SEP" 'index($2, j)==1{c=substr($2, length(j)+1); sub(/\..*$/, "", c); print $1"\t"c}'; }   # id<TAB>cohort (qc_<PRJ>[.<k>])
 dumped_runs() { find "$FQ_DIR" -mindepth 2 -maxdepth 2 -name '*_1.fastq.gz' -printf '%f\n' 2>/dev/null | sed 's/_1\.fastq\.gz$//'; }
 qc_done_runs() { find "$QC_DIR" -mindepth 2 -maxdepth 2 -name '*.done' -printf '%f\n' 2>/dev/null | sed 's/\.done$//'; }
 
@@ -63,10 +64,10 @@ submit_cohort() {   # $1 = BioProject
     || { echo "[submit] $c: samplesheet failed" >&2; return 1; }
   local n; n=$(( $(wc -l < "$rd/samplesheet.csv") - 1 ))
   part="$(pick_part)"; cores=$(sinfo -h -p "$part" -o '%c' 2>/dev/null | head -1); [ -n "$cores" ] || cores=32
-  local jid; jid=$(sbatch --parsable -J "$JOB:$c" -p "$part" -N 1 -n 1 -c "$cores" --exclusive -t "$QC_TIME" -o "$rd/slurm-%j.out" --wrap "bash '$SELF' node '$c'" 2>&1) \
+  local jid; jid=$(sbatch --parsable -J "$JOB$SEP$c" -p "$part" -N 1 -n 1 -c "$cores" --exclusive -t "$QC_TIME" -o "$rd/slurm-%j.out" --wrap "bash '$SELF' node '$c'" 2>&1) \
     || { echo "[submit] $c: sbatch failed: $jid" >&2; return 1; }
   echo "$jid" > "$CH/chunk.$c.job"
-  echo "  job $jid  $JOB:$c  on $part ($cores cores) ← $n runs (samplesheet)"
+  echo "  job $jid  $JOB$SEP$c  on $part ($cores cores) ← $n runs (samplesheet)"
 }
 
 submit() {
@@ -96,7 +97,7 @@ status)
   mkmap
   T=$(wc -l < "$RUNLIST"); Q=$(qc_done_runs | wc -l); D=$(dumped_runs | wc -l)
   printf 'qc done %6d / %d   dumped %d\n' "$Q" "$T" "$D"
-  echo "jobs:"; squeue -u "$USER" -h -o '  %i %j %T %M %N %r' 2>/dev/null | grep -F " $JOB"
+  echo "jobs:"; squeue -u "$USER" -h -o '  %i %j %T %M %N %r' 2>/dev/null | grep -F " $JOB$SEP"
   find "$QC_DIR" -mindepth 2 -maxdepth 2 -name '*.done' -mmin -60 2>/dev/null | wc -l | awk '{printf "last 1h: %d runs → %d runs/h\n", $1, $1}'
   echo "by cohort (qc done / dumped · state):"
   cohort_table | awk -F'\t' '{st=($5>=$3 && $3>0)?"✓ done":($6?"▶ running":($7?"ready":"waiting for dump")); printf "  %-14s %5d / %5d   %s\n", $1, $5, $3, st}' | sort -k2,2nr
