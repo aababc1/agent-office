@@ -80,8 +80,9 @@ xargs -a "$LIST" -n1 -P "$PARALLEL" -I{} bash -c 'fetch_one {}'
 
 status)
 source ./00_env_local.sh
-T=$(wc -l < "$RUNLIST"); D=$(find "$SRA_DIR" -name .validated 2>/dev/null | wc -l); F=$(sort -u "$LOG_DIR/prefetch.FAILED" 2>/dev/null | wc -l)
-printf 'validated %6d / %d   failed %d\n' "$D" "$T" "$F"
+T=$(wc -l < "$RUNLIST"); V=$(find "$SRA_DIR" -name .validated 2>/dev/null | wc -l); F=$(sort -u "$LOG_DIR/prefetch.FAILED" 2>/dev/null | wc -l)
+DU=$(find "${FQ_DIR:-$PROJ/fastq}" -mindepth 2 -maxdepth 2 -name '*_1.fastq.gz' 2>/dev/null | wc -l)   # §03 deletes $SRA_DIR/<run> after the dump, so prefetched = validated-waiting + dumped
+printf 'prefetched %6d / %d   (validated, waiting for dump %d · dumped %d)   failed %d   retry queue %d\n' "$(( V + DU ))" "$T" "$V" "$DU" "$F" "$( [ -s "$PROJ/manifest/runs_retry.txt" ] && wc -l < "$PROJ/manifest/runs_retry.txt" || echo 0 )"
 if [ -s "$LOG_DIR/prefetch_done.tsv" ]; then
   awk -F'\t' -v now="$(date +%s)" 'BEGIN{n=0;b=0} { cmd="date -d \""$2"\" +%s"; cmd | getline t; close(cmd); if (now-t<=3*3600){n++; b+=$4} } END{printf "last 3h: %d runs, %.1f GB → %.1f runs/h, %.2f TB/day\n", n, b/1e9, n/3, b/1e9/3*24/1000}' "$LOG_DIR/prefetch_done.tsv"
 fi
