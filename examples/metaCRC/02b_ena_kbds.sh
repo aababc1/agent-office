@@ -27,12 +27,14 @@ mkmap() {
   fi
 }
 cohort_of() { awk -F'\t' -v r="$1" '$1==r{print $2; exit}' "$MAP"; }
-# ENA record → "path1 md5_1 bytes1 path2 md5_2 bytes2" (the _1/_2 pair only; "" if ENA has no pair)
+# ENA record → "path1 md5_1 bytes1 path2 md5_2 bytes2": ENA's generated pair <run>_1/_2.fastq.gz; if ENA has not generated FASTQ yet
+# (recent submissions: fastq_ftp empty), the submitter's own pair from submitted_ftp (two FASTQ files named *_1/*_2 or *R1/*R2). "" if neither.
 ena_pair() {
-  curl -sS --retry 3 "$ENA_API?accession=$1&result=read_run&fields=run_accession,fastq_ftp,fastq_md5,fastq_bytes" 2>/dev/null \
-  | awk -F'\t' -v r="$1" 'NR>1 && $1==r { n=split($2,p,";"); split($3,m,";"); split($4,b,";");
-      for(i=1;i<=n;i++){ if(p[i] ~ "/"r"_1\\.fastq\\.gz$"){p1=p[i];m1=m[i];b1=b[i]} if(p[i] ~ "/"r"_2\\.fastq\\.gz$"){p2=p[i];m2=m[i];b2=b[i]} }
-      if(p1!="" && p2!="") print p1, m1, b1, p2, m2, b2 }'
+  curl -sS --retry 3 "$ENA_API?accession=$1&result=read_run&fields=run_accession,fastq_ftp,fastq_md5,fastq_bytes,submitted_ftp,submitted_md5,submitted_bytes,submitted_format" 2>/dev/null \
+  | awk -F'\t' -v r="$1" 'function pick(P,M,B,   n,p,m,b,i,p1,m1,b1,p2,m2,b2){ n=split(P,p,";"); split(M,m,";"); split(B,b,";")
+      for(i=1;i<=n;i++){ if(p[i] ~ /(_1|_R1|R1_001)\.(fastq|fq)\.gz$/){p1=p[i];m1=m[i];b1=b[i]} else if(p[i] ~ /(_2|_R2|R2_001)\.(fastq|fq)\.gz$/){p2=p[i];m2=m[i];b2=b[i]} }
+      if(p1!="" && p2!="") return p1" "m1" "b1" "p2" "m2" "b2; return "" }
+    NR>1 && $1==r { out=pick($2,$3,$4); if(out=="" && $8 ~ /^FASTQ;FASTQ$/) out=pick($5,$6,$7); if(out!="") print out }'
 }
 rel() { local p="$1"; p="${p#ftp.sra.ebi.ac.uk}"; p="${p#*//ftp.sra.ebi.ac.uk}"; echo "$p"; }   # ENA lists "ftp.sra.ebi.ac.uk/vol1/…"
 
