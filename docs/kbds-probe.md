@@ -127,15 +127,17 @@ tmux new -s merge -d 'cd ~/office && ./05_merge_kbds.sh feed 2>&1 | tee -a ~/met
 
 plan.yaml의 qc 단계 runner는 `{job: qc, job_sep: "_"}` — metaFun 드라이버(`kbds_submit_all.sh`)의 잡 이름 `qc_<BioProject>[.<k>]`에 맞춘 것. 청크 `.<k>`는 코호트로 합쳐 센다.
 
-## 6d. §06 assemble — `06_assemble_kbds.sh` (MEGAHIT, 샘플 단위, 2026-10-30)
+## 6d. §06 assemble — `06_assemble_kbds.sh` (샘플 단위, 2026-10-30; `ASM_TOOL=metaspades` 기본 — metaFun 창 결정, `megahit`은 런북 원안으로 남김)
 
 단위는 `$ASMLIST`(`samples_assemble.txt`)의 샘플. 입력은 런 수에 따라: 런 1개 → `qc/<PRJ>/<run>_1|_2.fastq.gz`(`<run>.done` 필요),
 런 2개 이상 → `merged/<PRJ>/<sample>_R1|_R2.fastq.gz`(§05). 입력이 아직 없으면 기다린다(QC/merge 중) — 실패 아님. 그래서 **QC 끝난 코호트의
 단일런 샘플은 merge와 상관없이 바로** 조립에 들어간다.
 출력 `assembly/<PRJ>/<sample>/contigs.renamed.fa`(마지막에 생성 = 마커; 헤더 `>{sample}_c{n} <MEGAHIT 원래 헤더>`) + `megahit.log` + `options.json`;
 MEGAHIT 작업 폴더(intermediate_contigs 등)는 지운다. 실패 `logs/asm.FAILED`: `NO_INPUT` · `MEGAHIT_FAIL` · `EMPTY`. `asm_done.tsv`에 샘플당 wall·peak RSS·contig 수·염기 수.
-노드 잡 하나 = 코호트 청크(`metacrc-asm:<PRJ>.<k>`, 기본 160샘플) = `cores/8`개 샘플 동시(`megahit -t 8 -m RAM×0.9/8`). 파티션 기본 `cpu64-only cpu64-only-m512GB`.
-MEGAHIT 옵션은 기본값 + `-t/-m/-o`만; k-list·`--min-contig-len`·preset은 정해지면 `ASM_MEGAHIT_ARGS`로.
+노드 잡 하나 = 코호트 청크(`metacrc-asm:<PRJ>.<k>`; metaspades 32샘플 / megahit 160샘플). 동시 수 = min(cores/8, RAM×0.9 / 샘플당 메모리(metaspades 120 GB, megahit 40 GB)),
+메모리가 한도면 남는 코어를 스레드로 채움(cpu64 1 TB: 7개 × 9 thr × 131 GB). 명령은 `spades.py --meta -1 -2 -o -t -m $ASM_SPADES_ARGS`(contigs.fasta) 또는
+`megahit -1 -2 -o -t -m $ASM_MEGAHIT_ARGS`(final.contigs.fa) — 도구 기본값 + `-t/-m/-o`만. k·`--only-assembler`·최소 길이는 metaFun 창에서 정해지면 `ASM_SPADES_ARGS`로.
+파티션 기본 `cpu64-only cpu64-only-m512GB`(m512는 3개 동시). 실패 코드 `NO_INPUT` · `ASM_FAIL` · `EMPTY`.
 
 ```bash
 ./06_assemble_kbds.sh pending                            # 코호트별 samples/ready/assembled/failed/live
@@ -145,7 +147,8 @@ tmux new -s asm -d 'cd ~/office && ./06_assemble_kbds.sh feed 2>&1 | tee -a ~/me
 ./06_assemble_kbds.sh retry
 ```
 손잡이: `ASM_ENV`(metacrc-asm) · `ASM_PART` · `ASM_MAX_NODES`(4) · `ASM_THREADS`(8) · `ASM_CHUNK`(160) · `ASM_TIME`(96:00:00) · `ASM_FEED_S`(900) · `ASM_MEGAHIT_ARGS` · `ASM_MEM_FRAC`(0.9).
-예산 주의: 7,595샘플 × (8 thread로 1–3 h) ÷ 노드당 8 ≈ 950–2,850 노드시간(cpu64 1/h) — 전체 예산 2,000과 맞물리므로 첫 코호트 실측 후 범위를 정한다(metaFun 창의 metaSPAdes/MEGAHIT 비교도 같은 숫자를 쓴다).
+예산 주의: metaSPAdes는 샘플당 8 thread로 6–25 h·60–150 GB(문헌·경험치) → 7,595샘플 ÷ 노드당 7 ≈ 6,500–27,000 노드시간(cpu64 1/h), 전체 예산 2,000을 크게 넘는다.
+`--only-assembler`(BayesHammer 생략)로 절반쯤, MEGAHIT이면 1/5–1/10. 그래서 전수 `feed` 전에 **PRJNA531273(30샘플) 실측**(`status`의 min/sample·peak RSS)으로 범위·도구를 정한다.
 
 ## 7. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
 
