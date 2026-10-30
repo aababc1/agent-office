@@ -112,14 +112,14 @@ stages:
     runner: {kind: slurm, job: metacrc-merge, nodes: 1, per_node: 12, threads: 4, time_h: 12, load: "$PROJ/manifest/merge_chunks/chunk.*.load"}
 
   - name: assemble
-    desc: "MEGAHIT de novo assembly (06_assemble.sbatch, himem)"
+    desc: "MEGAHIT de novo assembly per sample (06_assemble_kbds.sh): single-run samples from qc/, multi-run from merged/; one BioProject chunk per node job"
     icon: build
     unit: sample
     units: {file: $ASMLIST}
-    after: [qc, merge]
-    done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}/contigs.renamed.fa"}
-    failed: {log: "$LOG_DIR/asm.FAILED"}                 # NO_INPUT | MEGAHIT_FAIL
-    runner: {kind: slurm, job: metacrc-asm, array: 200, cpus: 32, mem: 250G, time_h: 48}
+    after: [qc, merge]                                    # a sample only needs its own runs QC'd (and merged if multi-run); cohorts start as soon as samples are ready
+    done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}/contigs.renamed.fa"}   # written last; headers {sample}_c{n} + MEGAHIT header
+    failed: {log: "$LOG_DIR/asm.FAILED"}                 # NO_INPUT | MEGAHIT_FAIL | EMPTY
+    runner: {kind: slurm, job: metacrc-asm, nodes: 1, per_node: 8, threads: 8, time_h: 96, load: "$PROJ/manifest/asm_chunks/chunk.*.load"}   # cpu64: 8 × 8 threads, -m = RAM×0.9/8; 160 samples per job
 
   - name: bin
     desc: "MetaBAT2 + SemiBin2 + DAS Tool (07_bin.sbatch)"
