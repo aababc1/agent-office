@@ -394,3 +394,19 @@ def test_probe_job_sep_and_chunk_suffix_fold_into_cohort(tmp_path, monkeypatch):
     assert r["stages"]["qc"]["jobsByCohort"] == {"PRJA": {"RUNNING": 1}, "PRJB": {"RUNNING": 1, "PENDING": 1}}   # qc_PRJB.2 + qc_PRJB.3 → PRJB
     assert r["stages"]["merge"]["jobsByCohort"] == {"PRJA": {"RUNNING": 1}} and r["stages"]["merge"]["nodeJobs"] == 1
     s = to_pipeline_state(r, "kbds"); assert s["stages"]["qc"]["jobsByCohort"]["PRJB"]["PENDING"] == 1
+
+
+def test_probe_implied_by_recomputes_eta_from_merged_done(tmp_path, monkeypatch):
+    """prefetch markers are deleted after the dump (implied_by: dump): remaining/ETA must use the merged done count, not the few live markers."""
+    import os, time as _t
+    from office_extract.probe import probe
+    monkeypatch.setenv("PATH", str(tmp_path)); d = tmp_path; now = _t.time()
+    runs = [f"R{i}" for i in range(100)]; (d / "runs.txt").write_text("\n".join(runs) + "\n")
+    (d / "fq").mkdir(); (d / "sra").mkdir()
+    for r in runs[:90]: (d / "fq" / f"{r}_1.fastq.gz").write_text("x")                       # dumped long ago (prefetch markers gone)
+    for r in runs[90:95]: (d / "sra" / r).mkdir(); p = d / "sra" / r / ".validated"; p.write_text(""); os.utime(p, (now - 600, now - 600))   # 5 just re-fetched
+    plan = {"project": "t", "where": "k", "sites": {"k": {"name": "K"}}, "paths": {"PROJ": str(d)},
+            "stages": [{"name": "prefetch", "unit": "run", "units": {"file": "$PROJ/runs.txt"}, "done": {"kind": "file", "path": "$PROJ/sra/{run}/.validated"}, "implied_by": "dump"},
+                       {"name": "dump", "unit": "run", "units": {"file": "$PROJ/runs.txt"}, "done": {"kind": "file", "path": "$PROJ/fq/{run}_1.fastq.gz"}}]}
+    st = probe(plan, "k", "k")["stages"]["prefetch"]
+    assert st["done"] == 95 and st["remaining"] == 5 and st["eta"]["basis"] == "5 done in last 3h" and st["eta"]["hours"] == 3.0   # 5 left at 5/3 per h

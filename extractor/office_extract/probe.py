@@ -400,6 +400,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
     groups = load_groups(plan, paths)
     report["cohorts"] = sorted({c for m in groups.values() for c in m.values()}) if groups else []
     mapped_procs: set[str] = set()
+    done_at_by: dict[str, list[float]] = {}
     for st in my_stages:
         name = st["name"]; done = st.get("done") or {}
         s: dict[str, Any] = {"name": name, "desc": st.get("desc"), "unit": st["unit"], "after": st.get("after") or [], "runner": st.get("runner") or {}}
@@ -455,6 +456,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
         s["remaining"] = remaining
         s["eta"] = eta(remaining, done_at, now) if remaining is not None else None
         s["ratio"] = round(s["done"] / s["total"], 4) if s.get("total") else None
+        done_at_by[name] = done_at
         report["stages"][name] = s
 
     # implied-by: a unit done in a later stage counts as done earlier (markers may have been deleted on purpose)
@@ -474,6 +476,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                 a["failed"] = {k: v for k, v in (a.get("failed") or {}).items() if k not in merged}
                 if a.get("total"):
                     a["remaining"] = a["total"] - a["done"] - len(a["failed"]); a["ratio"] = round(a["done"] / a["total"], 4)
+                    a["eta"] = eta(a["remaining"], done_at_by.get(st["name"], []), now)   # the ETA must see the implied completions too
     for s in stages.values():
         if s.get("doneIds") is not None:
             s["doneIds"] = len(s["doneIds"])           # counts only in the report; ids stay local

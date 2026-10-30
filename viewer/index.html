@@ -1064,6 +1064,11 @@ function mergeRuns(runs) {
 const fmtH = h => h == null ? '—' : h < 1 ? `${Math.round(h * 60)}분` : h < 48 ? `${h.toFixed(1)}시간` : `${(h / 24).toFixed(1)}일`;
 const fmtWhen = iso => iso ? new Date(iso).toLocaleString('ko-KR', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
 const PV = {sel: null};
+/** "100%" only when complete; 99.5–99.99% shows one decimal (8,391/8,420 is 99.7%, not 100%). */
+const fmtN = n => Number(n || 0).toLocaleString('en-US');
+const pctTxt = (r, complete) => complete ? '100' : (r >= 0.995 ? Math.min(99.9, Math.floor(r * 1000) / 10).toFixed(1) : String(Math.round(r * 100)));
+/** A rate-based ETA more than 180 days out is noise (a handful of stragglers at a trickle rate) — treat it as unknown. */
+const saneEta = (e) => e && e.at && (Date.parse(e.at) - Date.now()) < 180 * dayMs ? e : null;
 /** Pre-measurement estimate: remaining × est seconds per unit ÷ (slots per node × running nodes, or one node). */
 const estHours = (i) => { const e = i.st.estS; if (!e || !i.total || i.complete) return null; const slots = (i.runner.per_node || 8) * Math.max(1, i.st.nodeJobs || 0); return (i.total - i.done - (i.failed || 0)) * e / slots / 3600; };
 function stageInfo(name, plan, run) {
@@ -1099,7 +1104,7 @@ function milestoneState(m, info) {
   const need = (m.stages || []).filter(n => info[n]); const all = need.map(n => info[n]);
   const total = all.reduce((a, i) => a + (i.total || 0), 0), done = all.reduce((a, i) => a + (i.total ? i.done : 0), 0);
   const complete = all.length > 0 && all.every(i => i.complete);
-  const etaAt = all.map(i => i.complete ? null : (i.st.eta && i.st.eta.at) || null); const unknown = all.some((i, k) => !i.complete && !etaAt[k]);
+  const etaAt = all.map(i => i.complete ? null : (saneEta(i.st.eta) && i.st.eta.at) || null); const unknown = all.some((i, k) => !i.complete && !etaAt[k]);
   const eta = unknown ? null : etaAt.filter(Boolean).sort().pop() || null;
   const date = m.date ? Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(m.date) ? `${m.date}T23:59:59+09:00` : m.date) : NaN;   // a bare date = end of that day (Seoul)
   const dday = isNaN(date) ? null : Math.ceil((date - Date.now()) / dayMs);
@@ -1115,7 +1120,7 @@ function renderPipeline() {
   const roll = run.rollup || null; const info = {}; for (const n of order) info[n] = stageInfo(n, plan, run);
   $('pp-n').textContent = roll && roll.total ? `${roll.done.toLocaleString()} / ${roll.total.toLocaleString()}` : (run.probedAt ? '총량 미정' : '');
   const sites = run.sites || []; const canSubmit = sites.some(x => x.canSubmit === true) ? true : (sites.some(x => x.canSubmit === false) ? false : null);
-  const etaMax = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.eta && s.eta.hours) || 0));
+  const etaMax = Math.max(0, ...Object.values(run.stages || {}).map(s => (saneEta(s.eta) && s.eta.hours) || 0));
   const probedAt = run.probedAt || (sites.map(x => x.probedAt).sort().pop()) || null;
   const pct = roll && roll.total ? Math.round((roll.ratio || 0) * 1000) / 10 : null; const w = v => roll && roll.total ? `${Math.max(0, Math.min(100, v / roll.total * 100))}%` : '0%';
   const rate = Math.max(0, ...Object.values(run.stages || {}).map(s => (s.rates && (s.rates.per_h_3h || s.rates.per_h_12h)) || 0));
@@ -1129,9 +1134,9 @@ function renderPipeline() {
     const cls = next.status === 'late' ? 'late' : next.status === 'soon' ? 'soon' : next.status === 'ok' || next.status === 'done' ? 'ok' : '';
     const pillText = next.status === 'done' ? '✓ 완료' : next.status === 'late' ? (next.dday < 0 ? `지연 ${-next.dday}일` : `늦음 ${-next.slack}일`) : next.status === 'soon' ? `빠듯 (여유 ${next.slack}일)` : next.status === 'ok' ? `여유 ${next.slack}일` : 'ETA 측정 전';
     html += `<div class="ms"><div class="dday ${cls}">${next.dday == null ? '—' : next.dday >= 0 ? `D-${next.dday}` : `D+${-next.dday}`}</div>
-      <div style="min-width:0"><div class="nm">🏁 ${esc(next.name)}</div><div class="sub">${next.date ? `${esc(next.date)}` : '날짜 없음'} · ${next.need.map(esc).join(' → ')} · 진행 ${Math.round(next.ratio * 100)}%${next.eta ? ` · 예상 완료 ${fmtMD(next.eta)}` : ''}</div></div>
+      <div style="min-width:0"><div class="nm">🏁 ${esc(next.name)}</div><div class="sub">${next.date ? `${esc(next.date)}` : '날짜 없음'} · ${next.need.map(esc).join(' → ')} · 진행 ${pctTxt(next.ratio, next.complete)}%${next.total ? ` (${fmtN(next.done)}/${fmtN(next.total)})` : ''}${next.eta ? ` · 예상 완료 ${fmtMD(next.eta)}` : ''}</div></div>
       <div class="pill2 ${cls}">${pillText}</div><div class="bar"><i style="width:${Math.round(next.ratio * 100)}%"></i></div>
-      ${ms.length > 1 ? `<div class="more">${ms.filter(m => m !== next).map(m => `<span>${m.complete ? '✓' : '🏁'} ${esc(m.name)} <b>${m.dday == null ? '' : m.dday >= 0 ? `D-${m.dday}` : `D+${-m.dday}`}</b>${m.complete ? '' : ` · ${Math.round(m.ratio * 100)}%`}</span>`).join('')}</div>` : ''}</div>`;
+      ${ms.length > 1 ? `<div class="more">${ms.filter(m => m !== next).map(m => `<span>${m.complete ? '✓' : '🏁'} ${esc(m.name)} <b>${m.dday == null ? '' : m.dday >= 0 ? `D-${m.dday}` : `D+${-m.dday}`}</b>${m.complete ? '' : ` · ${pctTxt(m.ratio, false)}%`}</span>`).join('')}</div>` : ''}</div>`;
     // timeline strip (wide screens): start → last milestone, today, flags, ETA dots
     const t0 = Date.parse((plan.dates || {}).start || '') || Math.min(Date.now(), ...ms.map(m => Date.parse(m.date || '') || Date.now())) - 7 * dayMs;
     const t1 = Math.max(Date.now() + 7 * dayMs, ...ms.map(m => Date.parse(m.date || '') || 0), ...ms.map(m => m.eta ? Date.parse(m.eta) : 0));
@@ -1148,7 +1153,7 @@ function renderPipeline() {
   order.forEach((n, k) => { const i = info[n]; const ratio = i.total ? Math.min(1, i.done / i.total) : 0; const g = GLYPH[i.ps.icon] || GLYPH.machine; const kw = ICON_KO[i.ps.icon] || '';
     const cls = i.state === 'off' ? 'off' : i.state === 'done' ? 'done' : i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : '';
     const status = i.state === 'off' ? `<span>미계획${i.st.note ? ` · ${esc(i.st.note.replace(/^unit list missing: /, '목록 없음: '))}` : ''}</span>` : i.complete ? '<span class="r">완료 ✓</span>' :
-      `${i.running ? `<span class="r">▶ ${i.running} 실행</span>` : ''}${i.st.cpuUtil != null && i.running ? `<span title="노드 평균 load1/코어">CPU <b>${Math.round(i.st.cpuUtil * 100)}%</b></span>` : ''}${i.pending ? `<span>⏳ ${i.pending}</span>` : ''}${i.failed ? `<span class="f">✕ ${i.failed}</span>` : ''}${i.st.eta ? `<span>ETA <b>${fmtH(i.st.eta.hours)}</b></span>` : (estHours(i) != null && (i.running || i.done) ? `<span title="측정 전 추정 (${i.st.estS} s/${esc(i.unit)})">≈ ${fmtH(estHours(i))}<small style="opacity:.7"> est</small></span>` : (i.blocked ? '<span>앞 단계 대기</span>' : (!i.running && !i.done ? '<span>대기</span>' : '')))}`;
+      `${i.running ? `<span class="r">▶ ${i.running} 실행</span>` : ''}${i.st.cpuUtil != null && i.running ? `<span title="노드 평균 load1/코어">CPU <b>${Math.round(i.st.cpuUtil * 100)}%</b></span>` : ''}${i.pending ? `<span>⏳ ${i.pending}</span>` : ''}${i.failed ? `<span class="f">✕ ${i.failed}</span>` : ''}${saneEta(i.st.eta) ? `<span>ETA <b>${fmtH(i.st.eta.hours)}</b></span>` : (estHours(i) != null && (i.running || i.done) ? `<span title="측정 전 추정 (${i.st.estS} s/${esc(i.unit)})">≈ ${fmtH(estHours(i))}<small style="opacity:.7"> est</small></span>` : (i.blocked ? '<span>앞 단계 대기</span>' : (!i.running && !i.done ? '<span>대기</span>' : '')))}`;
     html += `<div class="mc ${cls} ${PV.sel === n ? 'sel' : ''}" data-n="${esc(n)}" tabindex="0" title="${esc(i.desc)}"><div class="h"><span class="no">${k + 1}</span><span class="nm">${esc(n)}</span>${kw ? `<span class="kw">· ${kw}</span>` : ''}<span class="lamp"></span></div>
       <div class="led">${i.total != null ? `${i.done.toLocaleString()}<span class="sp"> / </span><span class="sl">/</span>${i.total.toLocaleString()} <span class="u">${esc(i.unit)}</span>` : (i.done ? `${i.done} <span class="u">${esc(i.unit)}</span>` : '— / —')}</div>
       <div class="gl">${g({...i, ratio})}</div><div class="st">${status}</div>
@@ -1199,7 +1204,7 @@ function renderPipeline() {
     box.innerHTML = `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
       <div class="kv2">${i.total != null ? `<span>완료 <b>${i.done.toLocaleString()}</b> / ${i.total.toLocaleString()} ${esc(i.unit)}</span>` : ''}${i.running ? `<span>실행 <b>${i.running}</b></span>` : ''}${i.pending ? `<span>대기 <b>${i.pending}</b></span>` : ''}${i.failed ? `<span style="color:var(--bad)">실패 <b>${i.failed}</b></span>` : ''}
         ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h (12h)</span>` : ''}${st.rates && st.rates.per_h_3h ? `<span><b>${st.rates.per_h_3h >= 10 ? Math.round(st.rates.per_h_3h) : st.rates.per_h_3h.toFixed(1)}</b>/h (3h)</span>` : ''}
-        ${st.eta ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (estHours(i) != null ? `<span>추정 <b>${fmtH(estHours(i))}</b> (est ${st.estS} s/${esc(i.unit)}${st.nodeJobs ? ` · 노드 ${st.nodeJobs}` : ' · 노드 1 기준'})</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : ''))}${(st.processes || []).length ? `<span>process: ${st.processes.map(esc).join(', ')}</span>` : ''}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
+        ${saneEta(st.eta) ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (estHours(i) != null ? `<span>추정 <b>${fmtH(estHours(i))}</b> (est ${st.estS} s/${esc(i.unit)}${st.nodeJobs ? ` · 노드 ${st.nodeJobs}` : ' · 노드 1 기준'})</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : ''))}${(st.processes || []).length ? `<span>process: ${st.processes.map(esc).join(', ')}</span>` : ''}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
       ${(st.nodes || []).length ? `<ul>${st.nodes.map(n => `<li>🖥 ${esc(n.host)} · CPU <b>${Math.round(n.util * 100)}%</b> (load ${n.load1} / ${n.ncpu})${n.procs && n.procs.a != null ? ` · fasterq-dump ${n.procs.a} · pigz ${n.procs.b ?? 0}` : ''} · ${esc(String(n.chunk || '').replace(/^chunk\./, ''))} · ${fmtRel(n.at)}</li>`).join('')}</ul>` : ''}
       ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; };
   detail();
