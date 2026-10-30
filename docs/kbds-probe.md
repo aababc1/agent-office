@@ -106,6 +106,27 @@ tmux new -s qc -d 'cd ~/office && ./04_qc_kbds.sh feed 2>&1 | tee -a ~/metaCRC/l
 ```
 손잡이(00_env_local.sh에 export): `METAFUN_DIR`(`$HOME/metaFun`) · `QC_ENV`(`metacrc-qc`) · `QC_INDEX`(Cleanifier 인덱스 prefix) · `QC_SHM_NAME`(인덱스 basename) · `QC_PART`(`cpu32-only cpu64-only`) · `QC_MAX_NODES`(5) · `QC_TIME`(96:00:00) · `QC_FEED_S`(600) · `QC_NF_ARGS`.
 
+## 6c. §05 merge — `05_merge_kbds.sh` (다중런 샘플 322개 → 샘플당 R1/R2, 2026-10-30)
+
+단위는 `$MULTI`(`samples_multirun.txt`)의 샘플. 샘플의 런 = manifest에서 그 `sample_accession`이고 `runs_paired.txt`에 있는 런(정렬 순).
+입력은 QC 결과 `qc/<BioProject>/<run>_1|_2.fastq.gz` — **`<run>.done`이 있고 파일 끝에 BGZF EOF 블록(28바이트)이 있는 것만**.
+출력은 `merged/<BioProject>/<sample>_R2.fastq.gz` 먼저, `_R1` 마지막(= 완료 마커). gzip 멤버를 `cat`으로 이어 붙인다(재압축 없음, 유효한 gzip/BGZF;
+MEGAHIT·htslib 모두 읽음). 크기 합이 맞는지 확인하고 `merge_done.tsv`(sample when seconds bytes cohort runs)에 적는다.
+실패 `logs/merge.FAILED`: `MISSING_<run>`(런이 prefetch/dump 실패이거나 QC trace에 FAILED) · `TRUNCATED_<run>` · `CAT_FAIL` · `SIZE_MISMATCH`.
+샘플의 런 중 아직 QC 중인 게 있으면 기다린다(실패 아님). 코호트당 노드 잡 하나(`metacrc-merge:<BioProject>`, `--exclusive`), cat은 I/O-bound라
+`cores/4 × 1.5`개를 동시에 돌린다. 다중런 샘플은 PRJEB6070(196) · PRJEB12449(110) · PRJEB27928(16)에만 있다.
+
+```bash
+./05_merge_kbds.sh pending                               # 코호트별: samples/ready/merged/failed/live
+./05_merge_kbds.sh submit 1                              # READY 샘플이 있는 코호트 하나를 노드 1개로
+./05_merge_kbds.sh status                                # merged/322, 잡, 코호트별 ✓, 실패 목록
+tmux new -s merge -d 'cd ~/office && ./05_merge_kbds.sh feed 2>&1 | tee -a ~/metaCRC/logs/merge.feed.log'   # 상시
+./05_merge_kbds.sh retry                                 # merge.FAILED 비우고 다시 대기열로
+```
+손잡이(00_env_local.sh): `MERGE_PART`(`cpu32-only cpu64-only`) · `MERGE_MAX_NODES`(2) · `MERGE_TIME`(12:00:00) · `MERGE_FEED_S`(600) · `MERGE_OVERSUB`(1.5).
+
+plan.yaml의 qc 단계 runner는 `{job: qc, job_sep: "_"}` — metaFun 드라이버(`kbds_submit_all.sh`)의 잡 이름 `qc_<BioProject>[.<k>]`에 맞춘 것. 청크 `.<k>`는 코호트로 합쳐 센다.
+
 ## 7. SINGLE 런 2,061개 — 제외 (2026-10-22 결정)
 
 `runs_paired.txt`(8,420, PAIRED만)가 모든 런 단위 단계의 목록이다. `runs_single_excluded.txt`에 빠진 2,061개를 남겨 둔다. 런북의 03_dump 이후 sbatch 스크립트도 `RUNLIST`를 `runs_paired.txt`로 바꿔야 한다(00_env.sh 한 줄).

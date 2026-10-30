@@ -97,17 +97,19 @@ stages:
     done: {kind: file, path: "$QC_DIR/{cohort}/{run}.done"}     # written last, after <run>_1/_2.fastq.gz are renamed in place (docs/metacrc_qc_settings.md §9)
     nextflow: {process: [fastp_cleanifier], aux: [load_index, qc_summary]}   # per-run process; aux = once per job / cohort
     est: {s_per_unit: 76, basis: "PRJNA531273 30 runs, cpu32-only, 2026-10-27 (60 s/Gb)"}
-    runner: {kind: slurm, job: metacrc-qc, nodes: 1, per_node: 8, threads: 4, time_h: 96, load: "$PROJ/manifest/qc_chunks/chunk.*.load"}
+    # QC node jobs are submitted by metaFun's driver (scripts/rawreadqc/kbds_submit_all.sh): job names qc_<BioProject>[.<k>] →
+    # `job: qc` + `job_sep: "_"` (a .<k> chunk folds into its cohort). 04_qc_kbds.sh (metacrc-qc:<BioProject>) is the HQ-side alternative.
+    runner: {kind: slurm, job: qc, job_sep: "_", nodes: 1, per_node: 8, threads: 4, time_h: 96, load: "$PROJ/manifest/qc_chunks/chunk.*.load"}
 
   - name: merge
-    desc: "multi-run samples → one R1/R2 (05_merge.sbatch)"
+    desc: "multi-run samples → one R1/R2 per sample: cat of the QC'd runs' BGZF files (05_merge_kbds.sh, one BioProject per node job)"
     icon: funnel
     unit: sample
-    units: {file: $MULTI}
+    units: {file: $MULTI}                                 # 322 = PRJEB6070 196 · PRJEB12449 110 · PRJEB27928 16
     after: [qc]
-    done: {kind: file, path: "$MRG_DIR/{cohort}/{sample}_R1.fastq.gz"}
-    failed: {log: "$LOG_DIR/merge.FAILED"}               # MISSING_<run> | PAIR_MISMATCH
-    runner: {kind: slurm, job: metacrc-merge, array: 322, cpus: 4, mem: 8G, time_h: 4}
+    done: {kind: file, path: "$MRG_DIR/{cohort}/{sample}_R1.fastq.gz"}   # _R2 first, _R1 last
+    failed: {log: "$LOG_DIR/merge.FAILED"}               # MISSING_<run> (run prefetch-/dump-/QC-failed) | TRUNCATED_<run> | CAT_FAIL | SIZE_MISMATCH
+    runner: {kind: slurm, job: metacrc-merge, nodes: 1, per_node: 12, threads: 4, time_h: 12, load: "$PROJ/manifest/merge_chunks/chunk.*.load"}
 
   - name: assemble
     desc: "MEGAHIT de novo assembly (06_assemble.sbatch, himem)"

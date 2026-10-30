@@ -377,3 +377,20 @@ def test_probe_hybrid_stage_markers_plus_process_with_globbed_runs(tmp_path, mon
     assert st["done"] == 1 and list(st["failed"]) == ["R2"] and st["running"] == 1          # R3 is retrying, not failed
     assert r["nextflow"]["traceFiles"] == 2 and r["unplanned"] == {}                          # load_index is aux, not "unplanned"
     s = to_pipeline_state(r, "kbds"); assert s["stages"]["qc"]["estS"] == 76 and s["stages"]["qc"]["groups"]["PRJA"]["done"] == 1
+
+
+def test_probe_job_sep_and_chunk_suffix_fold_into_cohort(tmp_path, monkeypatch):
+    """runner.job_sep lets a stage match metaFun's qc_<cohort> job names; a .<k> chunk suffix folds into its cohort."""
+    from office_extract.probe import probe, to_pipeline_state
+    monkeypatch.setenv("PATH", str(tmp_path)); d = tmp_path
+    (d / "squeue").write_text("#!/bin/sh\nprintf 'qc_PRJA|cpu32-only|qc_PRJA|RUNNING|1:00|96:00:00|1|n1\\n'\nprintf 'qc_PRJB.2|cpu64-only|qc_PRJB.2|RUNNING|1:00|96:00:00|1|n2\\n'\nprintf 'qc_PRJB.3|cpu64-only|qc_PRJB.3|PENDING|0:00|96:00:00|1|(Resources)\\n'\nprintf 'metacrc-merge:PRJA|cpu32-only|metacrc-merge:PRJA|RUNNING|1:00|12:00:00|1|n3\\n'\n"); (d / "squeue").chmod(0o755)
+    (d / "sinfo").write_text("#!/bin/sh\nexit 1\n"); (d / "sinfo").chmod(0o755)
+    (d / "runs.txt").write_text("R1\nR2\n"); (d / "qc").mkdir()
+    plan = {"project": "t", "where": "kbds", "sites": {"kbds": {"name": "K", "slurm_user": "u"}}, "paths": {"PROJ": str(d)},
+            "stages": [{"name": "qc", "unit": "run", "units": {"file": "$PROJ/runs.txt"}, "done": {"kind": "file", "path": "$PROJ/qc/{run}.done"}, "runner": {"kind": "slurm", "job": "qc", "job_sep": "_"}},
+                       {"name": "merge", "unit": "sample", "units": {"file": "$PROJ/runs.txt"}, "done": {"kind": "file", "path": "$PROJ/merged/{sample}_R1.fastq.gz"}, "runner": {"kind": "slurm", "job": "metacrc-merge"}}]}
+    r = probe(plan, "kbds", "kbds")
+    assert r["stages"]["qc"]["nodeJobs"] == 2 and r["stages"]["qc"]["pending"] == 1
+    assert r["stages"]["qc"]["jobsByCohort"] == {"PRJA": {"RUNNING": 1}, "PRJB": {"RUNNING": 1, "PENDING": 1}}   # qc_PRJB.2 + qc_PRJB.3 → PRJB
+    assert r["stages"]["merge"]["jobsByCohort"] == {"PRJA": {"RUNNING": 1}} and r["stages"]["merge"]["nodeJobs"] == 1
+    s = to_pipeline_state(r, "kbds"); assert s["stages"]["qc"]["jobsByCohort"]["PRJB"]["PENDING"] == 1

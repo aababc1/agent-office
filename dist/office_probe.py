@@ -909,7 +909,7 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
             s["lastAt"] = iso(max(done_at)) if done_at else None
             job = (st.get("runner") or {}).get("job")
             s["running"] = 0  # filled from squeue below when the job name matches
-            s["_job"] = job
+            s["_job"] = job; s["_job_sep"] = (st.get("runner") or {}).get("job_sep") or ":"
             # markers say what is done; a Nextflow process (if named) says what is running / failed / how long a task takes
             pnames = [p for p in ((st.get("nextflow") or {}).get("process") or [])]
             mapped_procs.update((st.get("nextflow") or {}).get("aux") or [])      # per-job/per-cohort helpers: known, not counted
@@ -967,17 +967,23 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
     si = read_sinfo(site.get("partitions")) if has_slurm else None
     if sq:
         for s in stages.values():
-            job = s.pop("_job", None)
-            if job:   # the runner's job name, or that name with a ":<cohort>" suffix (03_dump_kbds.sh names jobs per BioProject)
-                hits = [v for n, v in sq["byName"].items() if n == job or n.startswith(job + ":")]
+            job = s.pop("_job", None); sep = s.pop("_job_sep", ":")
+            if job:   # the runner's job name, or that name + job_sep + "<cohort>[.<k>]" (03/04/05 name node jobs per BioProject; metaFun's driver uses qc_<cohort>)
+                hits = [v for n, v in sq["byName"].items() if n == job or n.startswith(job + sep)]
                 if hits:
                     if not s.pop("_nf_running", False):
                         s["running"] = sum(v.get("RUNNING", 0) for v in hits)
                     s["pending"] = sum(v.get("PENDING", 0) for v in hits)
                     s["nodeJobs"] = sum(v.get("RUNNING", 0) for v in hits)
-                    s["jobsByCohort"] = {n.split(":", 1)[1]: v for n, v in sq["byName"].items() if n.startswith(job + ":")} or None
+                    byc = {}
+                    for n, v in sq["byName"].items():
+                        if not n.startswith(job + sep): continue
+                        c = n[len(job) + len(sep):].split(".", 1)[0]   # chunk suffix .<k> folds into its cohort
+                        d = byc.setdefault(c, {})
+                        for k, x in v.items(): d[k] = d.get(k, 0) + x
+                    s["jobsByCohort"] = byc or None
     for s in stages.values():
-        s.pop("_job", None); s.pop("_nf_running", None)
+        s.pop("_job", None); s.pop("_job_sep", None); s.pop("_nf_running", None)
     report["cluster"] = {"squeue": sq, "sinfo": si,
                          "canSubmit": (any(p["idle"] > 0 for p in si["partitions"].values() if p.get("mine")) if si and si["partitions"] else None)}
 
