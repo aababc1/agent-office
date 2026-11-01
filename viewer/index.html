@@ -14,6 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="Office">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script src="config.js"></script>
+<script src="office3d.js"></script>
 <!--OFFICE:PWA-END-->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
 <style>
@@ -201,6 +202,7 @@ select.btn{padding:4px 6px}
 .kinds .note{padding:0;font-size:10.5px}
 /* 공정 (pipeline stages) */
 .pipe{display:flex;flex-direction:column;gap:10px}
+.pipe .s3d{margin:8px 0 10px}
 .pipe .big{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:end}
 .pipe .big .pct{font-family:var(--mono);font-size:28px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums}
 .pipe .big .pct small{font-size:12px;color:var(--muted);margin-left:8px;font-weight:400}
@@ -372,7 +374,7 @@ select.btn{padding:4px 6px}
       </div>
     </section>
     <section class="card" data-tab="pipe" id="pipe-card" hidden>
-      <h2>공장 · 공정 <span class="n" id="pp-n"></span></h2>
+      <h2>공장 · 공정 <span class="n" id="pp-n"></span><button class="btn" type="button" id="pp-3d" style="margin-left:auto" title="한 공간 3D ↔ 층별 2D">3D</button></h2>
       <div class="sec pipe" id="pipe"></div>
     </section>
     <section class="card" data-tab="talk" id="talk-card" hidden>
@@ -1114,6 +1116,37 @@ function milestoneState(m, info) {
   else if (eta && !isNaN(date)) { slack = Math.round((date - Date.parse(eta)) / dayMs); status = slack < 0 ? 'late' : slack <= 3 ? 'soon' : 'ok'; }
   return {name: m.name, date: m.date, dday, total, done, ratio: total ? done / total : (complete ? 1 : 0), complete, eta, slack, status, need: need};
 }
+// 3D view (office3d.js): one space for 서버실 · 처리 라인 · 연구실. Default on where WebGL works; the button and localStorage flip it.
+const V3 = {want: null, failed: false};
+function view3d() { if (V3.failed || !window.Office3D || !Office3D.supported()) return false; if (V3.want == null) { try { V3.want = localStorage.getItem('office.view3d') !== '0'; } catch (e) { V3.want = true; } } return V3.want; }
+function stageDetailHtml(i) { const st = i.st; const rn = i.runner;
+  const failedJobs = (PP.runs || []).flatMap(r => Object.entries(r.jobs || {}).filter(([k, j]) => j.stage === i.name && j.status === 'failed').map(([k, j]) => `${k.split(':').slice(1).join(':')} ${j.msg || ''}`));
+  return `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
+      <div class="kv2">${i.total != null ? `<span>완료 <b>${i.done.toLocaleString()}</b> / ${i.total.toLocaleString()} ${esc(i.unit)}</span>` : ''}${i.running ? `<span>실행 <b>${i.running}</b></span>` : ''}${i.pending ? `<span>대기 <b>${i.pending}</b></span>` : ''}${i.failed ? `<span style="color:var(--bad)">실패 <b>${i.failed}</b></span>` : ''}
+        ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h (12h)</span>` : ''}${st.rates && st.rates.per_h_3h ? `<span><b>${st.rates.per_h_3h >= 10 ? Math.round(st.rates.per_h_3h) : st.rates.per_h_3h.toFixed(1)}</b>/h (3h)</span>` : ''}
+        ${saneEta(st.eta) ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (estHours(i) != null ? `<span>추정 <b>${fmtH(estHours(i))}</b> (est ${st.estS} s/${esc(i.unit)}${st.nodeJobs ? ` · 노드 ${st.nodeJobs}` : ' · 노드 1 기준'})</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : ''))}${(st.processes || []).length ? `<span>process: ${st.processes.map(esc).join(', ')}</span>` : ''}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
+      ${(st.nodes || []).length ? `<ul>${st.nodes.map(n => `<li>🖥 ${esc(n.host)} · CPU <b>${Math.round(n.util * 100)}%</b> (load ${n.load1} / ${n.ncpu})${n.procs && n.procs.a != null ? ` · fasterq-dump ${n.procs.a} · pigz ${n.procs.b ?? 0}` : ''} · ${esc(String(n.chunk || '').replace(/^chunk\./, ''))} · ${fmtRel(n.at)}</li>`).join('')}</ul>` : ''}
+      ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; }
+/** Everything the 3D space needs, from the same `info`/plan/runs the 2D floors use. */
+function data3d(order, info, plan, run, ms) {
+  const cl = ((PP.runs || []).find(r => r.cluster && (r.cluster.sinfo || r.cluster.squeue)) || {}).cluster || {}; const sq = cl.squeue || {}; const si = (cl.sinfo && cl.sinfo.partitions) || {};
+  const jobs = sq.jobs || []; const parts = Object.entries(si).sort((a, b) => (a[1].gpu ? 1 : 0) - (b[1].gpu ? 1 : 0) || (b[1].mine ? 1 : 0) - (a[1].mine ? 1 : 0) || a[0].localeCompare(b[0])).map(([name, p]) => {
+    const nodes = p.nodes || {}; const total = p.total || 0; const idle = nodes.idle || p.idle || 0; const alloc = (nodes.allocated || 0) + (nodes.mixed || 0); const pj = jobs.filter(j => j.partition === name);
+    const ours = pj.filter(j => j.state === 'RUNNING').length; const pending = pj.filter(j => j.state === 'PENDING').length;
+    return {name, total, idle, others: Math.max(0, alloc - ours), ours, drained: Math.max(0, total - idle - alloc), gpu: !!p.gpu, mine: !!p.mine, limit: p.timelimit, pending, jobs: pj.map(j => ({name: j.name, state: j.state, time: j.time}))}; });
+  const gStages = order.filter(n => info[n].st.groups); const cohorts = [...new Set(gStages.flatMap(n => Object.keys(info[n].st.groups)))].filter(c => c !== '_');
+  const nextOf = {}; const doneCohorts = []; for (const c of cohorts) { const n = gStages.find(n => { const g = info[n].st.groups[c]; return g && g.total && g.done < g.total; }); if (n) (nextOf[n] = nextOf[n] || []).push(`${c} ${((info[n].st.groups[c] || {}).total - (info[n].st.groups[c] || {}).done).toLocaleString()}`); else doneCohorts.push(c); }
+  const stages = order.map(n => { const i = info[n]; const icon = i.ps.icon || 'machine'; return {name: n, ko: ICON_KO[icon] || '', icon, verb: ({dock: '포장 도착', unpack: '포장 뜯기', sieve: '체질·세척', funnel: '같은 샘플 합치기', build: '리드 → 컨티그', bins: '유전체별 분류', inspect: '다듬기·검수'})[icon] || esc(i.desc).slice(0, 18), done: i.done, total: i.total, failed: i.failed, running: i.running, pending: i.pending, state: i.state, nodeJobs: i.st.nodeJobs || 0, cohorts: nextOf[n] || []}; });
+  const hue = str => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const sess = ((S.projectInfo && S.projectInfo.sessions) || []).filter(x => liveStatus(x) !== 'ended' || Date.now() - Date.parse(x.lastAt || 0) < dayMs).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || '')).slice(0, 12);
+  const agents = sess.map(x => { const ls = liveStatus(x); return {id: x.session, name: (x.title || x.last || shortId(x.session)).slice(0, 10), role: ls === 'active' ? '활동 중' : ls === 'idle' ? fmtRel(x.lastAt) : '종료', status: ls === 'active' ? '작업' : ls === 'idle' ? '휴식' : '종료', active: ls === 'active', color: `hsl(${hue(x.session)}, 60%, 62%)`, task: x.last || ''}; });
+  const roll = run.rollup || {}; const next = ms.find(m => !m.complete) || ms[ms.length - 1]; const cpu = parts.filter(p => p.mine && !p.gpu); const gpu = parts.filter(p => p.gpu);
+  const kpi = [['전체 공정', roll.total ? `${pctTxt(roll.ratio || 0, roll.done >= roll.total)}%` : '—', roll.total ? `${fmtN(roll.done)} / ${fmtN(roll.total)}` : '총량 미정', ''],
+    next ? ['다음 마일스톤', next.name, `${next.dday == null ? '' : next.dday >= 0 ? `D-${next.dday}` : `D+${-next.dday}`}${next.status === 'late' ? ' · 늦어질 예정' : next.status === 'done' ? ' · 완료' : ''}`, next.status === 'late' ? 'bad' : next.status === 'done' ? 'ok' : ''] : null,
+    cpu.length ? ['CPU 사용 가능', `${cpu.reduce((a, p) => a + p.idle, 0)} / ${cpu.reduce((a, p) => a + p.total, 0)}`, gpu.length ? `GPU ${gpu.reduce((a, p) => a + p.idle, 0)} / ${gpu.reduce((a, p) => a + p.total, 0)}` : '', 'ok'] : null,
+    ['우리 잡', `${(sq.byState || {}).RUNNING || 0} 실행`, `대기 ${(sq.byState || {}).PENDING || 0}${run.probedAt ? ` · 프로브 ${fmtRel(run.probedAt)}` : ''}`, 'acc']].filter(Boolean);
+  return {parts, stages, doneCohorts, agents, milestones: ms, kpi, productText: `전 단계 완료 코호트 ${doneCohorts.length} / ${cohorts.length}`};
+}
 function renderPipeline() {
   const el = $('pipe'); const plan = PP.plan || {stages: []}; const run = PP.run || {stages: {}};
   const order = (plan.stages || []).map(s => s.name); for (const k of Object.keys(run.stages || {})) if (!order.includes(k)) order.push(k);
@@ -1147,10 +1180,12 @@ function renderPipeline() {
         return `<div class="tick" style="left:${x}"></div><div class="flag ${m.status === 'late' ? 'late' : m.complete || m.status === 'ok' ? 'ok' : ''}" style="left:${x};top:${row ? 46 : 0}px;${end ? 'transform:translateX(-100%)' : ''}">${m.complete ? '✓' : '🏁'} ${esc(m.name)}</div><div class="lab" style="left:${x};${end ? 'transform:translateX(-100%)' : ''}">${fmtMD(m.date)}</div>`; }).join(''); })()}
       ${ms.filter(m => m.eta && !m.complete).map(m => `<div class="eta" style="left:${XP(Date.parse(m.eta))}" title="${esc(m.name)} 예상 완료 ${fmtMD(m.eta)}"></div>`).join('')}</div>`;
   } else html += `<div class="ms none">🏁 마일스톤 미설정 — plan.yaml의 <code>milestones</code>에 날짜와 필요한 단계를 적으면 D-day와 ETA 비교가 여기 뜹니다.</div>`;
+  const use3d = view3d(); const b3 = $('pp-3d'); if (b3) { b3.textContent = use3d ? '2D' : '3D'; b3.hidden = !(window.Office3D && Office3D.supported()); }
+  if (use3d) html += `<div class="s3d" id="s3d"></div>`;
   // ---- 2F 생산 라인
   if (!PV.sel || !info[PV.sel]) PV.sel = order.find(n => info[n].state === 'run') || order.find(n => info[n].planned && !info[n].complete) || order[0];
-  html += `<div class="lvl"><div class="fl">2F 생산 라인 <span class="r">${roll ? `▶ ${roll.running} 실행 · ✕ ${roll.failed} 실패 · ${Object.values(info).filter(i => i.complete).length}/${order.length} 단계 완료` : ''}</span></div><div class="line">`;
-  order.forEach((n, k) => { const i = info[n]; const ratio = i.total ? Math.min(1, i.done / i.total) : 0; const g = GLYPH[i.ps.icon] || GLYPH.machine; const kw = ICON_KO[i.ps.icon] || '';
+  if (!use3d) html += `<div class="lvl"><div class="fl">2F 생산 라인 <span class="r">${roll ? `▶ ${roll.running} 실행 · ✕ ${roll.failed} 실패 · ${Object.values(info).filter(i => i.complete).length}/${order.length} 단계 완료` : ''}</span></div><div class="line">`;
+  if (!use3d) order.forEach((n, k) => { const i = info[n]; const ratio = i.total ? Math.min(1, i.done / i.total) : 0; const g = GLYPH[i.ps.icon] || GLYPH.machine; const kw = ICON_KO[i.ps.icon] || '';
     const cls = i.state === 'off' ? 'off' : i.state === 'done' ? 'done' : i.state === 'run' ? 'run' : i.state === 'bad' ? 'bad' : '';
     const status = i.state === 'off' ? `<span>미계획${i.st.note ? ` · ${esc(i.st.note.replace(/^unit list missing: /, '목록 없음: '))}` : ''}</span>` : i.complete ? '<span class="r">완료 ✓</span>' :
       `${i.running ? `<span class="r">▶ ${i.running} 실행</span>` : ''}${i.st.cpuUtil != null && i.running ? `<span title="노드 평균 load1/코어">CPU <b>${Math.round(i.st.cpuUtil * 100)}%</b></span>` : ''}${i.pending ? `<span>⏳ ${i.pending}</span>` : ''}${i.failed ? `<span class="f">✕ ${i.failed}</span>` : ''}${saneEta(i.st.eta) ? `<span>ETA <b>${fmtH(i.st.eta.hours)}</b></span>` : (estHours(i) != null && (i.running || i.done) ? `<span title="측정 전 추정 (${i.st.estS} s/${esc(i.unit)})">≈ ${fmtH(estHours(i))}<small style="opacity:.7"> est</small></span>` : (i.blocked ? '<span>앞 단계 대기</span>' : (!i.running && !i.done ? '<span>대기</span>' : '')))}`;
@@ -1158,7 +1193,7 @@ function renderPipeline() {
       <div class="led">${i.total != null ? `${i.done.toLocaleString()}<span class="sp"> / </span><span class="sl">/</span>${i.total.toLocaleString()} <span class="u">${esc(i.unit)}</span>` : (i.done ? `${i.done} <span class="u">${esc(i.unit)}</span>` : '— / —')}</div>
       <div class="gl">${g({...i, ratio})}</div><div class="st">${status}</div>
       <div class="pb"><i class="d" style="width:${ratio * 100}%"></i><i class="r" style="width:${i.total ? Math.min(100 - ratio * 100, i.running / i.total * 100) : 0}%"></i><i class="f" style="width:${i.total ? Math.min(100 - ratio * 100, i.failed / i.total * 100) : 0}%"></i></div></div>`; });
-  html += `</div><div class="belt ${roll && roll.running ? 'on' : ''}"></div><div class="belt-l">${rate ? `벨트 ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} /h →` : '벨트 정지'}</div><div class="sdetail" id="sdetail"></div>`;
+  if (!use3d) html += `</div><div class="belt ${roll && roll.running ? 'on' : ''}"></div><div class="belt-l">${rate ? `벨트 ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} /h →` : '벨트 정지'}</div><div class="sdetail" id="sdetail"></div>`;
   // ---- 코호트 보드: per-BioProject progress on every stage the probe grouped (plan.groups)
   const gStages = order.filter(n => info[n].st.groups); const cohorts = [...new Set(gStages.flatMap(n => Object.keys(info[n].st.groups)))].filter(c => c !== '_');
   if (cohorts.length) {
@@ -1172,10 +1207,10 @@ function renderPipeline() {
       ${rowsC.map(r => `<tr class="${r.allOk ? 'done' : ''}"><td class="nm">${esc(r.c)}</td><td class="n">${r.runs.toLocaleString()}</td>${r.cells.map(x => { const jb = ((info[x.n].st.jobsByCohort || {})[r.c]) || null; const live = jb ? ((jb.RUNNING || 0) ? `<span class="ok" title="실행 중인 노드 잡 ${jb.RUNNING}">▶${jb.RUNNING}</span> ` : (jb.PENDING ? `<span class="n" title="대기 잡 ${jb.PENDING}">⏳</span> ` : '')) : '';
         return `<td class="c" title="${esc(x.n)} ${x.done}/${x.total}${x.failed ? ` · 실패 ${x.failed}` : ''}">${x.total ? (x.ok ? '<span class="ok">✓</span>' : `${live}<span class="cbar"><i style="width:${x.done / x.total * 100}%"></i>${x.failed ? `<i class="f" style="width:${Math.min(100, x.failed / x.total * 100)}%"></i>` : ''}</span> <span class="n">${Math.round(x.done / x.total * 100)}%</span>`) : '<span class="n">—</span>'}</td>`; }).join('')}<td class="c">${r.nOk}/${r.cells.filter(x => x.total).length}</td></tr>`).join('')}</tbody></table></div>`;
   }
-  html += `</div>`;
+  if (!use3d) html += `</div>`;
   // ---- 1F 계산실
   const runsWithCluster = (PP.runs || []).filter(r => r.cluster && (r.cluster.squeue || r.cluster.sinfo));
-  if (runsWithCluster.length) {
+  if (runsWithCluster.length && !use3d) {
     html += `<div class="lvl"><div class="fl">1F 계산실 <span class="r">${canSubmit == null ? '' : canSubmit ? '노드 여유' : '노드 꽉 참'}</span></div><div class="hall">`;
     for (const r of runsWithCluster) { const sq = r.cluster.squeue, si = r.cluster.sinfo;
       html += `<div class="sq"><span>${esc(r.site || r.id)}${sq && sq.user ? ` · Slurm ${esc(sq.user)}` : ''}</span>${sq ? `<span>▶ <b>${(sq.byState || {}).RUNNING || 0}</b> 실행</span><span>⏳ <b>${(sq.byState || {}).PENDING || 0}</b> 대기</span>` : ''}${sq && Object.keys(sq.pendingReasons || {}).length ? `<span>사유: ${Object.entries(sq.pendingReasons).map(([k, v]) => `${esc(k)} ${v}`).join(' · ')}</span>` : ''}</div>`;
@@ -1199,15 +1234,11 @@ function renderPipeline() {
   }
   const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
   el.innerHTML = html;
-  const detail = () => { const i = info[PV.sel]; const box = $('sdetail'); if (!i || !box) return; const st = i.st; const rn = i.runner;
-    const failedJobs = (PP.runs || []).flatMap(r => Object.entries(r.jobs || {}).filter(([k, j]) => j.stage === i.name && j.status === 'failed').map(([k, j]) => `${k.split(':').slice(1).join(':')} ${j.msg || ''}`));
-    box.innerHTML = `<div class="l1"><b>${esc(i.name)}</b><span>${esc(i.desc)}</span>${rn.job ? `<small>${esc(rn.job)}${rn.array ? ` ×${rn.array}` : ''}${rn.cpus ? ` · ${rn.cpus}cpu` : ''}${rn.mem ? ` · ${esc(rn.mem)}` : ''}${rn.time_h ? ` · ${rn.time_h}h` : ''}</small>` : ''}</div>
-      <div class="kv2">${i.total != null ? `<span>완료 <b>${i.done.toLocaleString()}</b> / ${i.total.toLocaleString()} ${esc(i.unit)}</span>` : ''}${i.running ? `<span>실행 <b>${i.running}</b></span>` : ''}${i.pending ? `<span>대기 <b>${i.pending}</b></span>` : ''}${i.failed ? `<span style="color:var(--bad)">실패 <b>${i.failed}</b></span>` : ''}
-        ${st.rates && st.rates.per_h_12h ? `<span>속도 <b>${st.rates.per_h_12h >= 10 ? Math.round(st.rates.per_h_12h) : st.rates.per_h_12h.toFixed(1)}</b>/h (12h)</span>` : ''}${st.rates && st.rates.per_h_3h ? `<span><b>${st.rates.per_h_3h >= 10 ? Math.round(st.rates.per_h_3h) : st.rates.per_h_3h.toFixed(1)}</b>/h (3h)</span>` : ''}
-        ${saneEta(st.eta) ? `<span>ETA <b>${fmtH(st.eta.hours)}</b> · ${fmtWhen(st.eta.at)}</span>` : (estHours(i) != null ? `<span>추정 <b>${fmtH(estHours(i))}</b> (est ${st.estS} s/${esc(i.unit)}${st.nodeJobs ? ` · 노드 ${st.nodeJobs}` : ' · 노드 1 기준'})</span>` : (i.total && !i.complete && i.planned ? '<span>ETA — 완료 3건부터 측정</span>' : ''))}${(st.processes || []).length ? `<span>process: ${st.processes.map(esc).join(', ')}</span>` : ''}${st.taskS && st.taskS.p50 ? `<span>task p50 <b>${fmtH(st.taskS.p50 / 3600)}</b></span>` : ''}${st.lastAt ? `<span>마지막 완료 ${fmtRel(st.lastAt)}</span>` : ''}${i.after.length ? `<span>선행: ${i.after.map(esc).join(', ')}</span>` : ''}${st.note ? `<span>⚠ ${esc(st.note)}</span>` : ''}</div>
-      ${(st.nodes || []).length ? `<ul>${st.nodes.map(n => `<li>🖥 ${esc(n.host)} · CPU <b>${Math.round(n.util * 100)}%</b> (load ${n.load1} / ${n.ncpu})${n.procs && n.procs.a != null ? ` · fasterq-dump ${n.procs.a} · pigz ${n.procs.b ?? 0}` : ''} · ${esc(String(n.chunk || '').replace(/^chunk\./, ''))} · ${fmtRel(n.at)}</li>`).join('')}</ul>` : ''}
-      ${failedJobs.length ? `<ul>${failedJobs.slice(0, 40).map(f => `<li>✕ ${esc(f)}</li>`).join('')}${failedJobs.length > 40 ? `<li>… ${failedJobs.length - 40}개 더</li>` : ''}</ul>` : ''}`; };
+  const detail = () => { const i = info[PV.sel]; const box = $('sdetail'); if (!i || !box) return; box.innerHTML = stageDetailHtml(i); };
   detail();
+  if (use3d) { const host = $('s3d'); const d3 = data3d(order, info, plan, run, ms);
+    Office3D.mount(host, {detailHtml: n => info[n] ? `<div class="sdetail open">${stageDetailHtml(info[n])}</div>` : '', onAgent: id => selectSession(id)}).then(() => Office3D.sync(d3)).catch(e => { console.warn('3D off:', e.message); V3.failed = true; renderPipeline(); }); }
+  const b3b = $('pp-3d'); if (b3b) b3b.onclick = () => { V3.want = !view3d(); try { localStorage.setItem('office.view3d', V3.want ? '1' : '0'); } catch (e) { /* no storage */ } renderPipeline(); };
   el.querySelectorAll('.mc').forEach(g => { const go = () => { const box = $('sdetail'); if (PV.sel === g.dataset.n && box) box.classList.toggle('open'); else if (box) box.classList.add('open'); PV.sel = g.dataset.n; el.querySelectorAll('.mc').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
   const cbh = $('cbh'); if (cbh) cbh.onclick = () => { const b = $('cb'); b.classList.toggle('open'); cbh.querySelector('.tg').textContent = b.classList.contains('open') ? '▾' : '▸ 펼치기'; };
   el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && getComputedStyle(b).display !== 'none') b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) card.scrollIntoView({behavior: 'smooth', block: 'start'}); } }; });
