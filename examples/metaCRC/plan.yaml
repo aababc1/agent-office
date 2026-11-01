@@ -42,8 +42,9 @@ paths:
   SRA_DIR: $PROJ/sra
   FQ_DIR: $PROJ/fastq
   QC_DIR: $PROJ/qc
-  MRG_DIR: $PROJ/merged
-  ASM_DIR: $PROJ/assembly
+  MRG_DIR: $PROJ/merged                     # 05_merge_kbds.sh output (superseded by reads/ from metaFun merge_runs.py, 2026-11-01)
+  READS_DIR: $PROJ/reads                    # stage 0 of assembly: per-sample reads (single-run = link to qc/, multi-run = concat)
+  ASM_DIR: $PROJ/asm
   BIN_DIR: $PROJ/bins
   MAG_DIR: $PROJ/mag_qc
   LOG_DIR: $PROJ/logs
@@ -101,25 +102,24 @@ stages:
     # `job: qc` + `job_sep: "_"` (a .<k> chunk folds into its cohort). 04_qc_kbds.sh (metacrc-qc:<BioProject>) is the HQ-side alternative.
     runner: {kind: slurm, job: qc, job_sep: "_", nodes: 1, per_node: 8, threads: 4, time_h: 96, load: "$PROJ/manifest/qc_chunks/chunk.*.load"}
 
-  - name: merge
-    desc: "multi-run samples → one R1/R2 per sample: cat of the QC'd runs' BGZF files (05_merge_kbds.sh, one BioProject per node job)"
+  - name: reads
+    desc: "QC 런 → 샘플 reads: 단일런은 qc/ 링크, 다중런 322는 gz 이어붙임 (metaFun merge_runs.py, 06_assemble_kbds.sh reads)"
     icon: funnel
     unit: sample
-    units: {file: $MULTI}                                 # 322 = PRJEB6070 196 · PRJEB12449 110 · PRJEB27928 16
+    units: {file: $ASMLIST}
     after: [qc]
-    done: {kind: file, path: "$MRG_DIR/{cohort}/{sample}_R1.fastq.gz"}   # _R2 first, _R1 last
-    failed: {log: "$LOG_DIR/merge.FAILED"}               # MISSING_<run> (run prefetch-/dump-/QC-failed) | TRUNCATED_<run> | CAT_FAIL | SIZE_MISMATCH
-    runner: {kind: slurm, job: metacrc-merge, nodes: 1, per_node: 12, threads: 4, time_h: 12, load: "$PROJ/manifest/merge_chunks/chunk.*.load"}
+    done: {kind: file, path: "$READS_DIR/{cohort}/{sample}_2.fastq.gz"}   # merge_runs.py writes _2 after _1 (.part → rename)
+    runner: {kind: slurm, job: metacrc-reads, nodes: 1, time_h: 6}
 
   - name: assemble
-    desc: "metaSPAdes de novo assembly per sample (06_assemble_kbds.sh, ASM_TOOL=metaspades; decision 2026-10-30): single-run samples from qc/, multi-run from merged/; one BioProject chunk per node job"
+    desc: "metaSPAdes per sample (metaFun ASSEMBLY_kbds.nf: --meta, BayesHammer on, k 21,33,55, -m 120 GB; 06_assemble_kbds.sh, one BioProject chunk per node job)"
     icon: build
     unit: sample
     units: {file: $ASMLIST}
-    after: [qc, merge]                                    # a sample only needs its own runs QC'd (and merged if multi-run); cohorts start as soon as samples are ready
-    done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}/contigs.renamed.fa"}   # written last; headers {sample}_c{n} + MEGAHIT header
-    failed: {log: "$LOG_DIR/asm.FAILED"}                 # NO_INPUT | ASM_FAIL | EMPTY
-    runner: {kind: slurm, job: metacrc-asm, nodes: 1, per_node: 7, threads: 8, time_h: 96, load: "$PROJ/manifest/asm_chunks/chunk.*.load"}   # cpu64 (1 TB): min(64/8, 0.9 TB/120 GB) = 7 samples at a time; 32 samples per job
+    after: [reads]
+    done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}.done"}          # written last (asm.tsv 1 row); contigs <sample>.contigs.fa.gz (>= 500 bp), scaffolds, asm_logs/
+    nextflow: {process: [assemble], aux: [asm_summary]}                   # running/failed/task time from runs/asm/*/trace.txt (retry 1 → ignore)
+    runner: {kind: slurm, job: metacrc-asm, nodes: 1, per_node: 8, threads: 8, time_h: 96, load: "$PROJ/manifest/asm_chunks/chunk.*.load"}   # 1 TB node: 8 × 8 thr × 120 GB; 512 GB: 3 × 21; cpu32: 1 × 32
 
   - name: bin
     desc: "MetaBAT2 + SemiBin2 + DAS Tool (07_bin.sbatch)"
