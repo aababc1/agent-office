@@ -19,7 +19,7 @@ function webgl() { try { const c = document.createElement('canvas'); return !!(c
 
 const S = { el: null, opts: {}, renderer: null, scene: null, camera: null, labels: [], labelsEl: null, built: false, agents: new Map(), movers: [], machines: [], clickable: [], dyn: null, cam: { zoom: 1, yaw: Math.PI / 4 + .12, pitch: .74 }, target: null, raf: 0, last: 0, tod: 'night', data: null };
 const CSS = `
-.o3d{--ls:1;position:relative;background:#0d1420;border-radius:10px;overflow:hidden;height:min(72vh,680px);min-height:380px;font-family:var(--body,"IBM Plex Sans KR","Apple SD Gothic Neo",system-ui,sans-serif);color:#e8edf7}
+.o3d{--ls:1;position:relative;background:#0d1420;border-radius:10px;overflow:hidden;height:min(80vh,760px);min-height:380px;font-family:var(--body,"IBM Plex Sans KR","Apple SD Gothic Neo",system-ui,sans-serif);color:#e8edf7}
 .o3d canvas{display:block;width:100%;height:100%;touch-action:none}
 .o3d .lbls{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .o3d .lbl{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:none;will-change:transform;font-size:calc(11px*var(--ls));line-height:1.25}
@@ -41,7 +41,7 @@ const CSS = `
 .o3d .detail{position:absolute;right:10px;bottom:44px;width:270px;max-width:calc(100% - 20px);background:rgba(21,30,48,.96);border:1px solid #2b3a5c;border-radius:10px;padding:10px 12px;display:none;pointer-events:auto;font-size:12px;color:#8fa0bf;line-height:1.45}
 .o3d .detail.on{display:block}.o3d .detail h3{margin:0 0 4px;font:600 13px var(--display,Sora,sans-serif);color:#e8edf7}.o3d .detail .x{position:absolute;right:6px;top:6px;background:transparent;border:0;color:#8fa0bf;font-size:14px;cursor:pointer}
 .o3d .detail ul{margin:4px 0 0;padding-left:16px}.o3d .detail b{color:#e8edf7}
-@media (max-width:760px){.o3d{height:76vh;min-height:460px}.o3d .lbl.mach{padding:3px 6px}.o3d .lbl.crate{display:none}.o3d .lbl.step{display:none}.o3d .kpi{gap:4px}.o3d .kpi div{padding:3px 6px;font-size:9.5px}.o3d .kpi b{font-size:12px}.o3d .legend{font-size:9px;gap:6px;padding:3px 6px}.o3d .legend .hint{display:none}.o3d .tod button{padding:3px 6px;font-size:10px}.o3d .detail{bottom:40px;font-size:11px}.o3d .kpi div{padding:3px 6px}.o3d .kpi b{font-size:12px}.o3d .legend{font-size:9.5px}}`;
+@media (max-width:760px){.o3d{height:76vh;min-height:460px}.o3d .lbl.mach{padding:3px 6px}.o3d .lbl.crate{display:none}.o3d .lbl.step{display:none}.o3d .kpi{gap:4px}.o3d .kpi div{padding:3px 6px;font-size:9.5px;flex:1 1 calc(50% - 4px)}.o3d .kpi b{font-size:12px}.o3d .legend{font-size:9px;gap:6px;padding:3px 6px}.o3d .legend .hint{display:none}.o3d .tod button{padding:3px 6px;font-size:10px}.o3d .detail{bottom:40px;font-size:11px}.o3d .kpi div{padding:3px 6px}.o3d .kpi b{font-size:12px}.o3d .legend{font-size:9.5px}}`;
 
 function ensureCss() { if (document.getElementById('o3d-css')) return; const st = document.createElement('style'); st.id = 'o3d-css'; st.textContent = CSS; document.head.appendChild(st); }
 const M = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .82, metalness: .05 }, o));
@@ -82,9 +82,9 @@ function buildRoom() {
   DESK_SPOTS.forEach(([x, z]) => desk(g, x, z));
   // zone signs: one position for the isometric (wide) view, one for the portrait view where the room's long axis runs down the screen
   S.zones = []; const zl = (h, iso, port) => { const l = label('zone', h, 0, 0, 0); l.keep = true; S.zones.push({ l, iso, port }); };
-  zl('서버실<small>랙 = 파티션 · 칸 = 노드</small>', [13.5, 0.2, -7.2, 'translate(-50%,-100%)'], [-17.6, 3.4, -10.3, 'translate(-50%,-100%)']);
-  zl('데이터 처리 라인<small>게이지 = 진행률 · 상자 = 다음 코호트</small>', [-17.6, 0.2, 1.6, 'translate(0,-100%)'], [-17.6, 3.0, -0.4, 'translate(-50%,-100%)']);
-  zl('연구실<small>책상 = 세션 · 뱃지 = 상태</small>', [-17.6, 0.2, 11.9, 'translate(0,-100%)'], [-17.6, 3.2, 10.0, 'translate(-50%,-100%)']);
+  zl('서버실<small>랙 = 파티션 · 칸 = 노드</small>', [17.5, 3.2, -12.3, 'translate(-50%,-100%)'], [-17.6, 3.4, -10.3, 'translate(-50%,-100%)']);
+  zl('데이터 처리 라인<small>게이지 = 진행률 · 상자 = 다음 코호트</small>', [-17.6, 0.1, 2.8, 'translate(0,-100%)'], [-17.6, 3.0, -0.4, 'translate(-50%,-100%)']);
+  zl('연구실<small>책상 = 세션 · 뱃지 = 상태</small>', [-17.6, 0.2, 11.9, 'translate(0,-100%)'], [-17.6, 4.2, 10.8, 'translate(-50%,-100%)']);
   placeZones();
   const pl = label('agent', `<i style="background:${HEX.acc}"></i>PI<small>사무실</small>`, 14.4, 2.2, 7.8); pl.keep = true;
 }
@@ -104,7 +104,7 @@ function cabinet(x, z, p, zig) {
   const cap = new THREE.Mesh(new THREE.BoxGeometry(1.14, .06, .94), M(0x2a3650)); cap.position.y = 2.63; g.add(cap);
   g.position.set(x, 0, z); S.dyn.add(g); g.userData = { kind: 'part', p }; body.userData.ref = g; S.clickable.push(body);
   const avail = p.idle > 0; const col = avail ? HEX.ok : HEX.bad;
-  if (S.compact) { label('part c', `<b>${esc(p.name.replace(/^cpu\d+-only-/, '').replace(/-only$/, ''))}</b> <span style="color:${col};font-weight:600">${avail ? p.idle : (p.drained >= p.total ? '점검' : '0')}</span><span style="color:${HEX.muted}">/${p.total}</span>${p.ours ? ` <span style="color:${HEX.acc}">▶${p.ours}</span>` : ''}${p.pending ? ` <span style="color:${HEX.warn}">⏳${p.pending}</span>` : ''}`, x, 2.9, z); return; }
+  if (S.compact) { label('part c', `<b>${esc(p.name.replace(/^cpu\d+-only-/, '').replace(/-only$/, ''))}</b> <span style="color:${col};font-weight:600">${avail ? p.idle : (p.drained >= p.total ? '점검' : '0')}</span><span style="color:${HEX.muted}">/${p.total}</span>${p.ours ? ` <span style="color:${HEX.acc}">▶${p.ours}</span>` : ''}${p.pending ? ` <span style="color:${HEX.warn}">⏳${p.pending}</span>` : ''}`, x, 2.9, z - (S.portrait ? .8 : 0)); return; }
   label('part', `<b>${esc(p.name)}</b><span class="n"><span style="color:${col};font-weight:600">${avail ? p.idle + ' 가능' : (p.drained >= p.total ? '점검' : '사용 중')}</span><span style="color:${HEX.muted}"> / ${p.total}</span>${p.ours ? ` <span style="color:${HEX.acc}">▶${p.ours}</span>` : ''}${p.pending ? ` <span style="color:${HEX.warn}">⏳${p.pending}</span>` : ''}</span>`, x, 2.9 + (zig ? .9 : 0), z);
 }
 function machine(x, st, zig) {
@@ -175,10 +175,10 @@ const YAW_ISO = Math.PI / 4 + .12, YAW_PORT = .28;
 function resize() { const w = S.el.clientWidth, h = S.el.clientHeight; if (!w || !h) return; const a = w / h;
   const port = a < 1.35; if (port !== S.portrait) { S.portrait = port; S.cam.yaw = port ? YAW_PORT : YAW_ISO; placeZones(); }   // narrow box: long axis of the room runs down the screen
   // keep the room between the HUD (top) and the legend (bottom): fit into the free band, then shift the view centre into it
-  const hud = S.el.querySelector('.hud'), foot = S.el.querySelector('.foot'); const top = hud ? hud.offsetHeight + 10 : 0, bot = foot ? foot.offsetHeight + 10 : 0; const avail = Math.max(140, h - top - bot);
+  const hud = S.el.querySelector('.hud'), foot = S.el.querySelector('.foot'); const top = hud ? hud.offsetHeight + 10 : 0, bot = foot ? foot.offsetHeight + 10 : 0; const avail = Math.max(140, h - (top + bot) * (a > 1.5 ? .45 : 1));   // wide box: the HUD/legend sit beside the room's empty corners, so only half the squeeze
   placeCamera(); const s = fitScale(a, h / avail) / S.cam.zoom; const ppu = h / (2 * s); const d = (top - bot) / 2 / ppu;
   S.camera.left = -s * a; S.camera.right = s * a; S.camera.top = s + d; S.camera.bottom = -s + d; S.camera.updateProjectionMatrix(); S.renderer.setSize(w, h, false);
-  S.el.style.setProperty('--ls', Math.max(.7, Math.min(1, ppu / 22)).toFixed(3));
+  S.el.style.setProperty('--ls', Math.max(.85, Math.min(1, ppu / 22)).toFixed(3));
   const compact = ppu < 21; if (compact !== S.compact) { S.compact = compact; S.el.classList.toggle('compact', compact); if (S.data) sync(S.data); } }
 const V = { v: null };
 function updateLabels() { const r = S.renderer.domElement.getBoundingClientRect(); if (!V.v) V.v = new THREE.Vector3(); for (const l of S.labels) { V.v.copy(l.pos).project(S.camera); const x = (V.v.x + 1) / 2 * r.width, y = (1 - V.v.y) / 2 * r.height; l.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) ${l.anchor}`; } }
