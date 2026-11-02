@@ -83,7 +83,7 @@ function buildRoom() {
   // zone signs: one position for the isometric (wide) view, one for the portrait view where the room's long axis runs down the screen
   S.zones = []; const zl = (h, iso, port) => { const l = label('zone', h, 0, 0, 0); l.keep = true; S.zones.push({ l, iso, port }); };
   zl('서버실<small>랙 = 파티션 · 칸 = 노드</small>', [17.5, 3.2, -12.3, 'translate(-50%,-100%)'], [-17.6, 3.4, -10.3, 'translate(-50%,-100%)']);
-  zl('데이터 처리 라인<small>게이지 = 진행률 · 상자 = 다음 코호트</small>', [-17.6, 0.1, 2.8, 'translate(0,-100%)'], [-17.6, 3.0, -0.4, 'translate(-50%,-100%)']);
+  zl('데이터 처리 라인<small>게이지 = 진행률 · 상자 = 다음 코호트</small>', [-18.8, 0.8, 1.2, 'translate(-100%,-50%)'], [-17.6, 3.0, -0.4, 'translate(-50%,-100%)']);
   zl('연구실<small>책상 = 세션 · 뱃지 = 상태</small>', [-17.6, 0.2, 11.9, 'translate(0,-100%)'], [-17.6, 4.2, 10.8, 'translate(-50%,-100%)']);
   placeZones();
   const pl = label('agent', `<i style="background:${HEX.acc}"></i>PI<small>사무실</small>`, 14.4, 2.2, 7.8); pl.keep = true;
@@ -219,7 +219,7 @@ async function mount(container, opts) {
     S.lights.sun.position.set(14, 24, 10); S.lights.sun.castShadow = true; S.lights.sun.shadow.mapSize.set(2048, 2048); Object.assign(S.lights.sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 }); S.lights.sun.shadow.bias = -0.0005; S.lights.warm.position.set(8, 7, 8); S.lights.cold.position.set(-10, 6, -5);
     S.scene.add(S.lights.hemi, S.lights.sun, S.lights.warm, S.lights.cold); S.labelsEl = document.createElement('div'); S.labelsEl.className = 'lbls'; buildRoom(); }
   // (re)attach to the container: index.html rebuilds the card's HTML on every refresh
-  if (S.el !== container) { S.el = container; container.classList.add('o3d'); container.innerHTML = '';
+  if (S.el !== container) { S.el = container; container.classList.add('o3d'); container.classList.toggle('compact', !!S.compact); container.innerHTML = '';
     container.appendChild(S.renderer.domElement); container.appendChild(S.labelsEl);
     container.insertAdjacentHTML('beforeend', `<div class="hud"><div class="kpi"></div></div><div class="foot"><div class="legend"><span><i style="background:${HEX.ok}"></i>사용 가능</span><span><i style="background:${HEX.bad}"></i>타인 사용 중</span><span><i style="background:${HEX.acc}"></i>우리 잡</span><span><i style="background:#3a4660"></i>점검</span><span><i style="background:#ffd9a6"></i>상자 = 코호트</span><span class="hint">드래그 회전 · 휠/핀치 확대 · 클릭 = 상세</span></div><div class="tod" role="group" aria-label="시간대"><button type="button" data-tod="day">낮</button><button type="button" data-tod="evening">저녁</button><button type="button" data-tod="night">밤</button></div></div><div class="detail"><button type="button" class="x" aria-label="닫기">✕</button><h3></h3><p></p></div>`);
     bind(); bindUi(); const hr = new Date().getHours(); let tod = hr >= 7 && hr < 17 ? 'day' : hr < 20 ? 'evening' : 'night'; try { tod = localStorage.getItem('office.tod') || tod; } catch (e) { /* no storage */ } setTod(tod);
