@@ -439,3 +439,24 @@ def test_probe_sstat_cpu_utilisation_per_running_job(tmp_path, monkeypatch):
     assert st["cpuUtil"] == round((0.8 + 0.008) / 2, 3) and [n["host"] for n in st["nodes"]] == ["cpu64-only-001", "cpu64-only-008"]
     assert st["nodes"][0]["src"] == "sstat" and st["nodes"][0]["load1"] == 51.2 and st["nodes"][0]["ncpu"] == 64 and st["nodes"][0]["chunk"] == "asm_PRJA.1"
     s = to_pipeline_state(r, "kbds"); assert s["stages"]["assemble"]["cpuUtil"] == st["cpuUtil"] and s["cluster"]["squeue"]["jobs"][0]["util"] == 0.8
+
+
+def test_trace_raw_mode_and_new_command_run_header(tmp_path):
+    """ASSEMBLY_kbds.nf runs write trace.raw (epoch ms, ms durations, bytes, bare %cpu) and a `### name:` .command.run header:
+    both must parse — task time, last activity, CPU efficiency (cores actually used vs cpus given) and in-flight process names."""
+    from office_extract.probe import read_trace, summarize_trace, inflight_tasks
+    hdr = "task_id\thash\tnative_id\tprocess\ttag\tname\tstatus\texit\tattempt\tcpus\tmemory\tsubmit\tstart\tcomplete\tduration\trealtime\t%cpu\tpeak_rss\trchar\twchar\tworkdir"
+    rows = ["1\tc2/c9a2d1\t281370\tassemble\tSAMEA2466896\tassemble (SAMEA2466896)\tCOMPLETED\t0\t1\t8\t128849018880\t1793500000000\t1793500001000\t1793518630955\t18630955\t18629955\t105.1\t12759126016\t1\t1\t/w/c2/c9a2d1",
+            "2\t9b/0d73cd\t291825\tassemble\tSAMEA2466891\tassemble (SAMEA2466891)\tCOMPLETED\t0\t1\t8\t128849018880\t1793500000000\t1793500001000\t1793520952295\t20952295\t20951295\t104.0\t21629026304\t1\t1\t/w/9b/0d73cd",
+            "3\taf/a36052\t397393\tassemble\tSAMEA2466000\tassemble (SAMEA2466000)\tFAILED\t1\t1\t8\t128849018880\t1793500000000\t1793500001000\t1793500100000\t99000\t98000\t50.0\t1000000\t1\t1\t/w/af/a36052"]
+    (tmp_path / "trace.txt").write_text(hdr + "\n" + "\n".join(rows) + "\n")
+    t = read_trace(str(tmp_path / "trace.txt")); p = summarize_trace(t)["assemble"]
+    assert p["done"] == 2 and p["failed"] == 1 and p["tags_failed"] == {"SAMEA2466000": "FAILED exit=1"}
+    assert p["realtimeS"]["p50"] == 20951.295 and p["lastAt"] == "2026-11-01T08:15:52Z"   # epoch ms → iso
+    assert p["taskCpu"] == {"pctP50": 105.1, "cpus": 8, "coresUsedP50": 1.1, "rssGBp50": 20.14, "rssGBmax": 20.14}
+    # in-flight task dir with the newer header
+    d = tmp_path / "work" / "0e" / "a0a7d355c57a9dd200467ad900c84f"; d.mkdir(parents=True)
+    (d / ".command.begin").write_text(""); (d / ".command.run").write_text("#!/bin/bash\n### ---\n### name: 'assemble (SAMEA2467000)'\n### container: null\n### ---\nset -e\n")
+    d2 = tmp_path / "work" / "1f" / "old"; d2.mkdir(parents=True); (d2 / ".command.begin").write_text(""); (d2 / ".command.run").write_text("#!/bin/bash\n# NEXTFLOW TASK: fastp_cleanifier (SRR1)\n")
+    inf = inflight_tasks(str(tmp_path / "work"))
+    assert sorted((x["process"], x["tag"]) for x in inf) == [("assemble", "SAMEA2467000"), ("fastp_cleanifier", "SRR1")]

@@ -55,6 +55,9 @@ def _run(cmd: list[str], timeout: int = 20) -> str | None:
 
 
 def _parse_ts(s: str) -> float | None:
+    s = (s or "").strip()
+    if re.fullmatch(r"\d{12,14}", s):          # trace.raw = true: epoch milliseconds (ASSEMBLY_kbds.nf runs)
+        return int(s) / 1000.0
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
         try:
             return datetime.strptime(s.strip(), fmt).timestamp()
@@ -67,11 +70,38 @@ def _dur(s: str) -> float | None:
     """Nextflow duration like '1h 23m 4s', '4.5s', '850ms' → seconds."""
     if not s or s == "-":
         return None
+    if re.fullmatch(r"\d+", s.strip()):          # trace.raw = true: milliseconds
+        return int(s) / 1000.0
     total, found = 0.0, False
     for num, unit in re.findall(r"([\d.]+)\s*(ms|[dhms])", s):
         found = True
         total += float(num) * {"d": 86400, "h": 3600, "m": 60, "s": 1, "ms": 0.001}[unit]
     return total if found else None
+
+
+def _pctnum(s: str) -> float | None:
+    s = (s or "").strip().rstrip("%").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _intnum(s: str) -> int | None:
+    s = (s or "").strip()
+    return int(s) if s.isdigit() else None
+
+
+def _bytes_gb(s: str) -> float | None:
+    """peak_rss: raw bytes ('12759126016') or formatted ('12.7 GB', '850 MB')."""
+    s = (s or "").strip()
+    if not s or s == "-":
+        return None
+    m = re.fullmatch(r"([\d.]+)\s*([KMGT]?B)?", s, re.I)
+    if not m:
+        return None
+    x = float(m.group(1)); u = (m.group(2) or "B").upper()
+    return round(x / {"B": 1 << 30, "KB": 1 << 20, "MB": 1 << 10, "GB": 1, "TB": 1 / 1024}[u], 2)
 
 
 def _pct(values: list[float], q: float) -> float | None:
@@ -100,6 +130,7 @@ def read_trace(path: str) -> list[dict[str, Any]]:
         row["_complete"] = _parse_ts(row.get("complete", "") or "") or _parse_ts(row.get("start", "") or "")
         row["_submit"] = _parse_ts(row.get("submit", "") or "")
         row["_realtime"] = _dur(row.get("realtime", "") or "")
+        row["_cpu"] = _pctnum(row.get("%cpu", "")); row["_rssGB"] = _bytes_gb(row.get("peak_rss", "")); row["_cpus"] = _intnum(row.get("cpus", ""))
         row["_status"] = (row.get("status") or "").upper()
         out.append(row)
     return out
@@ -108,11 +139,14 @@ def read_trace(path: str) -> list[dict[str, Any]]:
 def summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
     procs: dict[str, dict[str, Any]] = {}
     for r in rows:
-        p = procs.setdefault(r["_process"], {"done": 0, "failed": 0, "cached": 0, "other": 0, "tags_done": [], "tags_failed": {}, "realtime": [], "lastAt": None, "firstAt": None})
+        p = procs.setdefault(r["_process"], {"done": 0, "failed": 0, "cached": 0, "other": 0, "tags_done": [], "tags_failed": {}, "realtime": [], "cpu": [], "rss": [], "cpus": [], "lastAt": None, "firstAt": None})
         st = r["_status"]
         if st == "COMPLETED":
             p["done"] += 1; p["tags_done"].append(r["_tag"])
             if r["_realtime"] is not None: p["realtime"].append(r["_realtime"])
+            if r.get("_cpu") is not None: p["cpu"].append(r["_cpu"])
+            if r.get("_rssGB") is not None: p["rss"].append(r["_rssGB"])
+            if r.get("_cpus") is not None: p["cpus"].append(r["_cpus"])
         elif st == "CACHED":
             p["cached"] += 1; p["tags_done"].append(r["_tag"])
         elif st in ("FAILED", "ABORTED"):
@@ -123,8 +157,10 @@ def summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if t:
             p["lastAt"] = max(p["lastAt"] or 0, t); p["firstAt"] = min(p["firstAt"] or t, t)
     for p in procs.values():
-        rt = p.pop("realtime")
+        rt = p.pop("realtime"); cpu = p.pop("cpu"); rss = p.pop("rss"); cpus = p.pop("cpus")
         p["realtimeS"] = {"n": len(rt), "p50": _pct(rt, .5), "p90": _pct(rt, .9)} if rt else None
+        # task CPU efficiency: %cpu (100 = one core busy for the whole task) against the cpus the task was given → threads actually used
+        p["taskCpu"] = {"pctP50": _pct(cpu, .5), "cpus": _pct(cpus, .5) if cpus else None, "coresUsedP50": round(_pct(cpu, .5) / 100, 1), "rssGBp50": _pct(rss, .5) if rss else None, "rssGBmax": max(rss) if rss else None} if cpu else None
         p["lastAt"] = iso(p["lastAt"]) if p["lastAt"] else None
         p["firstAt"] = iso(p["firstAt"]) if p["firstAt"] else None
         p["tags_done"] = sorted(set(p["tags_done"]))
@@ -150,7 +186,7 @@ def inflight_tasks(work_dir: str, limit: int = 2000) -> list[dict[str, Any]]:
             continue
         proc, tag = "", ""
         for l in _read_lines(os.path.join(d, ".command.run"))[:40]:
-            m = re.search(r"NEXTFLOW TASK:\s*(.+)$", l)
+            m = re.search(r"NEXTFLOW TASK:\s*(.+)$", l) or re.match(r"^###\s*name:\s*'?(.+?)'?\s*$", l)   # old `# NEXTFLOW TASK: x (tag)` / new `### name: 'x (tag)'` header
             if m:
                 nm = m.group(1).strip(); mm = re.match(r"^(.*?)\s*\((.*)\)$", nm)
                 proc = (mm.group(1) if mm else nm).split(":")[-1]; tag = mm.group(2) if mm else ""
@@ -510,6 +546,8 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                 s["running"] = sum(inflight_by_proc.get(p, 0) for p in pnames); s["_nf_running"] = True
                 rt = [procs.get(p, {}).get("realtimeS") for p in pnames if procs.get(p, {}).get("realtimeS")]
                 s["taskS"] = rt[0] if len(rt) == 1 else ({"p50": _pct([x["p50"] for x in rt if x["p50"]], .5)} if rt else None)
+                tc = [procs.get(p, {}).get("taskCpu") for p in pnames if procs.get(p, {}).get("taskCpu")]
+                s["taskCpu"] = tc[0] if tc else None        # cores a finished task really kept busy vs the cpus it was given
                 s["processes"] = pnames
             loadglob = (st.get("runner") or {}).get("load")
             if loadglob:
@@ -603,7 +641,7 @@ def to_pipeline_state(report: dict[str, Any], run_id: str) -> dict[str, Any]:
                     "rates": s.get("rates"), "lastAt": s.get("lastAt"), "desc": s.get("desc"), "after": s.get("after"),
                     "source": s.get("source"), "note": s.get("note"), "taskS": s.get("taskS"), "updatedAt": report["at"], "groups": s.get("groups"),
                     "nodes": s.get("nodes"), "cpuUtil": s.get("cpuUtil"), "jobsByCohort": s.get("jobsByCohort"), "nodeJobs": s.get("nodeJobs"),
-                    "estS": s.get("estS"), "processes": s.get("processes")}
+                    "estS": s.get("estS"), "processes": s.get("processes"), "taskCpu": s.get("taskCpu")}
     jobs = {}
     for name, s in report["stages"].items():
         for unit, reason in list((s.get("failed") or {}).items())[:200]:
