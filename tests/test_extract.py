@@ -410,3 +410,32 @@ def test_probe_implied_by_recomputes_eta_from_merged_done(tmp_path, monkeypatch)
                        {"name": "dump", "unit": "run", "units": {"file": "$PROJ/runs.txt"}, "done": {"kind": "file", "path": "$PROJ/fq/{run}_1.fastq.gz"}}]}
     st = probe(plan, "k", "k")["stages"]["prefetch"]
     assert st["done"] == 95 and st["remaining"] == 5 and st["eta"]["basis"] == "5 done in last 3h" and st["eta"]["hours"] == 3.0   # 5 left at 5/3 per h
+
+
+def test_probe_sstat_cpu_utilisation_per_running_job(tmp_path, monkeypatch):
+    """Without heartbeat files the stage's CPU use comes from Slurm accounting: sstat AveCPU×NTasks over the non-extern steps
+    ÷ (elapsed × allocated cores) per running job → cluster.squeue.jobs[].util and the stage's nodes/cpuUtil."""
+    from office_extract.probe import probe, to_pipeline_state, slurm_seconds
+    monkeypatch.setenv("PATH", str(tmp_path)); d = tmp_path
+    # squeue %i|%P|%j|%T|%M|%l|%D|%R|%C|%N : two asm jobs 10 h in on 64-core nodes, one pending
+    (d / "squeue").write_text("#!/bin/sh\nprintf '91|cpu64-only|asm_PRJA.1|RUNNING|10:00:00|96:00:00|1|cpu64-only-001|64|cpu64-only-001\\n'\n"
+                              "printf '92|cpu64-only-m512GB|asm_PRJB.1|RUNNING|2-00:00:00|96:00:00|1|cpu64-only-008|64|cpu64-only-008\\n'\n"
+                              "printf '93|cpu64-only|asm_PRJB.2|PENDING|0:00|96:00:00|1|(Resources)|64|\\n'\n"); (d / "squeue").chmod(0o755)
+    # sstat -n -P -a -j 91,92 -o JobID,AveCPU,MaxRSS,NTasks : batch step carries nextflow + spades; extern is ignored
+    (d / "sstat").write_text("#!/bin/sh\ncase \"$*\" in *91,92*) ;; *) echo 'unexpected args' >&2; exit 1;; esac\n"
+                             "printf '91.extern|00:00:01|1000K|1\\n91.batch|21-08:00:00|97.5G|1\\n92.extern|00:00:01|1000K|1\\n92.batch|1-00:00:00|400G|1\\n92.0|00:00:00|10M|1\\n'\n"); (d / "sstat").chmod(0o755)
+    (d / "sinfo").write_text("#!/bin/sh\nexit 1\n"); (d / "sinfo").chmod(0o755)
+    (d / "samples.txt").write_text("S1\nS2\n"); (d / "asm").mkdir()
+    plan = {"project": "t", "where": "kbds", "sites": {"kbds": {"name": "K", "slurm_user": "u"}}, "paths": {"PROJ": str(d)},
+            "stages": [{"name": "assemble", "unit": "sample", "units": {"file": "$PROJ/samples.txt"}, "done": {"kind": "file", "path": "$PROJ/asm/{sample}.done"},
+                        "runner": {"kind": "slurm", "job": "asm", "job_sep": "_", "load": "$PROJ/nope/*.load"}}]}
+    r = probe(plan, "kbds", "kbds")
+    jobs = {j["id"]: j for j in r["cluster"]["squeue"]["jobs"]}
+    assert slurm_seconds("21-08:00:00") == 21 * 86400 + 8 * 3600
+    assert jobs["91"]["util"] == 0.8 and jobs["91"]["busyCores"] == 51.2 and jobs["91"]["maxRssGB"] == 97.5     # 512 core-h over 10 h on 64 cores
+    assert jobs["92"]["util"] == 0.008 and jobs["92"]["maxRssGB"] == 400.0                                     # 24 core-h over 48 h × 64 cores: nearly idle
+    assert "util" not in jobs["93"]
+    st = r["stages"]["assemble"]
+    assert st["cpuUtil"] == round((0.8 + 0.008) / 2, 3) and [n["host"] for n in st["nodes"]] == ["cpu64-only-001", "cpu64-only-008"]
+    assert st["nodes"][0]["src"] == "sstat" and st["nodes"][0]["load1"] == 51.2 and st["nodes"][0]["ncpu"] == 64 and st["nodes"][0]["chunk"] == "asm_PRJA.1"
+    s = to_pipeline_state(r, "kbds"); assert s["stages"]["assemble"]["cpuUtil"] == st["cpuUtil"] and s["cluster"]["squeue"]["jobs"][0]["util"] == 0.8

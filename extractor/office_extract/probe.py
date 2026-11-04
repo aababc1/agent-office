@@ -320,7 +320,7 @@ def eta(remaining: int, done_at: list[float], now: float) -> dict[str, Any] | No
 
 # ---------------------------------------------------------------- Slurm
 def read_squeue(user: str | None) -> dict[str, Any] | None:
-    cmd = ["squeue", "-h", "-o", "%i|%P|%j|%T|%M|%l|%D|%R"] + (["-u", user] if user else [])
+    cmd = ["squeue", "-h", "-o", "%i|%P|%j|%T|%M|%l|%D|%R|%C|%N"] + (["-u", user] if user else [])
     out = _run(cmd)
     if out is None:
         return None
@@ -329,7 +329,17 @@ def read_squeue(user: str | None) -> dict[str, Any] | None:
         f = l.split("|")
         if len(f) < 8:
             continue
-        jobs.append({"id": f[0], "partition": f[1], "name": f[2], "state": f[3], "time": f[4], "limit": f[5], "nodes": f[6], "reason": f[7]})
+        j = {"id": f[0], "partition": f[1], "name": f[2], "state": f[3], "time": f[4], "limit": f[5], "nodes": f[6], "reason": f[7]}
+        if len(f) > 9:
+            j["cpus"] = int(f[8]) if f[8].isdigit() else None; j["nodelist"] = f[9]
+        jobs.append(j)
+    # CPU actually consumed by the running jobs (Slurm accounting): util = cpu-time / (elapsed × allocated cores)
+    acct = read_sstat([j["id"] for j in jobs if j["state"] == "RUNNING"])
+    for j in jobs:
+        a = acct.get(j["id"])
+        if a and j.get("cpus") and slurm_seconds(j["time"]):
+            el = slurm_seconds(j["time"]); busy = a["cpuS"] / el
+            j.update(cpuS=a["cpuS"], busyCores=round(busy, 1), util=round(min(1.0, busy / j["cpus"]), 3), maxRssGB=a.get("maxRssGB"))
     by_state: dict[str, int] = {}
     reasons: dict[str, int] = {}
     for j in jobs:
@@ -340,6 +350,62 @@ def read_squeue(user: str | None) -> dict[str, Any] | None:
     for j in jobs:
         d = by_name.setdefault(j["name"], {}); d[j["state"]] = d.get(j["state"], 0) + 1
     return {"user": user, "jobs": jobs[:200], "byState": by_state, "pendingReasons": reasons, "byName": by_name, "at": iso(time.time())}
+
+
+def slurm_seconds(t: str) -> int:
+    """Slurm time strings: [d-]hh:mm:ss | mm:ss | ss (squeue %M, sstat AveCPU)."""
+    t = (t or "").strip()
+    if not t or t in ("INVALID", "UNLIMITED", "N/A"):
+        return 0
+    d = 0
+    if "-" in t:
+        dd, t = t.split("-", 1); d = int(dd or 0)
+    parts = t.split(":")
+    try:
+        f = [float(x) for x in parts]
+    except ValueError:
+        return 0
+    if len(f) == 3: sec = f[0] * 3600 + f[1] * 60 + f[2]
+    elif len(f) == 2: sec = f[0] * 60 + f[1]
+    else: sec = f[0]
+    return int(d * 86400 + sec)
+
+
+def _rss_gb(v: str) -> float | None:
+    v = (v or "").strip()
+    if not v:
+        return None
+    unit = v[-1].upper(); num = v[:-1] if unit in "KMGT" else v
+    try:
+        x = float(num)
+    except ValueError:
+        return None
+    return round(x * {"K": 1 / 1048576, "M": 1 / 1024, "G": 1, "T": 1024}.get(unit, 1 / 1048576), 2)
+
+
+def read_sstat(job_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """sstat for the running jobs, one call: per job the CPU time consumed by every step except `extern`
+    (AveCPU × NTasks per step; the batch step holds nextflow and everything it forks) and the largest MaxRSS."""
+    if not job_ids:
+        return {}
+    out = _run(["sstat", "-n", "-P", "-a", "-j", ",".join(job_ids), "-o", "JobID,AveCPU,MaxRSS,NTasks"])
+    if not out:
+        return {}
+    acct: dict[str, dict[str, Any]] = {}
+    for l in out.splitlines():
+        f = l.split("|")
+        if len(f) < 4 or not f[0]:
+            continue
+        base, _, step = f[0].partition(".")
+        if step == "extern":
+            continue
+        n = int(f[3]) if f[3].strip().isdigit() else 1
+        a = acct.setdefault(base, {"cpuS": 0, "maxRssGB": None, "steps": 0})
+        a["cpuS"] += slurm_seconds(f[1]) * max(1, n); a["steps"] += 1
+        rss = _rss_gb(f[2])
+        if rss is not None and (a["maxRssGB"] is None or rss > a["maxRssGB"]):
+            a["maxRssGB"] = rss
+    return acct
 
 
 def read_sinfo(partitions: list[str] | None) -> dict[str, Any] | None:
@@ -507,6 +573,12 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                         d = byc.setdefault(c, {})
                         for k, x in v.items(): d[k] = d.get(k, 0) + x
                     s["jobsByCohort"] = byc or None
+                    if not s.get("nodes"):   # no heartbeat files (metaFun's drivers do not write them) → Slurm accounting per running job
+                        acc = [j for j in sq["jobs"] if j["state"] == "RUNNING" and j.get("util") is not None and (j["name"] == job or j["name"].startswith(job + sep))]
+                        if acc:
+                            s["nodes"] = [{"host": j.get("nodelist") or "?", "load1": j["busyCores"], "ncpu": j["cpus"], "util": j["util"], "at": sq["at"], "procs": {"a": None, "b": None},
+                                           "chunk": j["name"], "src": "sstat", "job": j["id"], "elapsed": j["time"], "maxRssGB": j.get("maxRssGB")} for j in acc]
+                            s["cpuUtil"] = round(sum(j["util"] for j in acc) / len(acc), 3)
     for s in stages.values():
         s.pop("_job", None); s.pop("_job_sep", None); s.pop("_nf_running", None)
     report["cluster"] = {"squeue": sq, "sinfo": si,

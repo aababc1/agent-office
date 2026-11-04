@@ -54,6 +54,7 @@ python3 office_probe.py once --plan plan.yaml --site kbds --to ~/office/out     
 - 단계별 `done/total`, 실패 목록(런북 `*.FAILED`의 사유, Nextflow `FAILED exit=N`), 실행 중 task(`work/`의 `.command.begin`만 있고 `.exitcode` 없는 것), 마지막 완료 시각
 - 완료 속도(최근 3h/12h/48h) → 남은 양 ÷ 속도 = **ETA**. 실측이 3건 이상 쌓인 창을 쓰므로 처음엔 비어 있다가 돌수록 정확해진다
 - `squeue -u k260a01`: 내 잡 RUNNING/PENDING과 PENDING 사유(Priority/Resources/Dependency)
+- `sstat -a -j <실행 중 잡들>`: Slurm 회계의 CPU-time(AveCPU×NTasks, extern 스텝 제외)과 MaxRSS → 잡별 **CPU 활용률 = CPU-time ÷ (경과 × 할당 코어)**. 하트비트(`*.load`)가 없는 단계(metaFun 드라이버가 낸 `qc_*`, `asm_*`)는 이 값이 랙·기계의 CPU %로 보인다. 누적 평균이라 막 시작한 잡은 낮게 나오고, 지금 순간은 `srun --jobid=<id> --overlap -N1 -n1 uptime`으로 본다.
 - `sinfo`: plan의 `site.partitions`에 적은 파티션의 idle/alloc 노드 수 → `canSubmit`
 - trace에는 있는데 plan에 없는 process는 `unplanned`로 그대로 올라간다(단계 이름을 지어내지 않음). 보고 나서 plan의 `done: {kind: nextflow, process: [...]}`에 넣으면 그 단계로 묶인다
 
