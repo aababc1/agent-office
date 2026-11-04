@@ -66,7 +66,7 @@ units:
   sample_multirun:
     file: $MULTI                        # 322
   sample_assemble:
-    file: $ASMLIST                      # not created yet → stage shows "not planned" until it exists
+    file: $ASMLIST                      # one sample per line; `06_assemble_kbds.sh list` derives it from the manifest (PAIRED runs minus runs_to_exclude.tsv)
 
 stages:
   - name: prefetch
@@ -119,7 +119,9 @@ stages:
     after: [reads]
     done: {kind: file, path: "$ASM_DIR/{cohort}/{sample}.done"}          # written last (asm.tsv 1 row); contigs <sample>.contigs.fa.gz (>= 500 bp), scaffolds, asm_logs/
     nextflow: {process: [assemble], aux: [asm_summary]}                   # running/failed/task time from runs/asm/*/trace.txt (retry 1 → ignore)
-    runner: {kind: slurm, job: metacrc-asm, nodes: 1, per_node: 8, threads: 8, time_h: 96, load: "$PROJ/manifest/asm_chunks/chunk.*.load"}   # 1 TB node: 8 × 8 thr × 120 GB; 512 GB: 3 × 21; cpu32: 1 × 32
+    # Node jobs are submitted by metaFun's assembly driver: job names asm_<BioProject>.<k> (seen in squeue 2026-11-03) →
+    # `job: asm` + `job_sep: "_"`, a .<k> chunk folds into its cohort. 06_assemble_kbds.sh (metacrc-asm:<id>) is the HQ-side alternative.
+    runner: {kind: slurm, job: asm, job_sep: "_", nodes: 1, per_node: 8, threads: 8, time_h: 96, load: "$PROJ/manifest/asm_chunks/chunk.*.load"}   # 1 TB node: 8 × 8 thr × 120 GB; 512 GB: 3 × 21; cpu32: 1 × 32
 
   - name: bin
     desc: "MetaBAT2 + SemiBin2 + DAS Tool (07_bin.sbatch)"

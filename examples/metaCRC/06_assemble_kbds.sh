@@ -7,11 +7,13 @@
 #               --samplesheet $PWD/samplesheet.csv --outdir $ASM_DIR --run_dir $PWD --work_dir $PROJ/work/asm/<BioProject>_metaspades --assembler metaspades --cpus N --mem_gb 120 -resume
 #   done      $ASM_DIR/<BioProject>/<sample>.done (written last); contigs <sample>.contigs.fa.gz (>= 500 bp), scaffolds, asm_logs/, <BioProject>.asm_summary.tsv
 #   process   assemble (sample당 1, tag = sample), asm_summary (코호트당 1); failure = trace FAILED (retry 1 → ignore)
+#   list      ./06_assemble_kbds.sh list → $ASMLIST (samples_assemble.txt) from the manifest; the office's assemble stage counts against it
 #   packing   samples at a time on a node = min(nproc/8, RAM / mem_gb) and --cpus = nproc / that  (1 TB: 8 × 8 thr · 512 GB: 3 × 21 · 224 GB: 1 × 32)
 # A sample is READY when its reads pair exists (single-run samples right after QC; multi-run after merge_runs.py). A cohort job takes its READY,
 # not-yet-assembled samples; big cohorts are cut by --max-bases into runs/asm/<BioProject>.<k>/ so one job stays under the 120 h wall.
 #
 # Usage (login node, ~/office):
+#   ./06_assemble_kbds.sh list                       write manifest/samples_assemble.txt (the office's assemble unit list) from the manifest
 #   ./06_assemble_kbds.sh reads                      submit the reads stage (merge_runs.py --all) as one node job; rerunnable
 #   ./06_assemble_kbds.sh pending                    per cohort: samples / reads ready / assembled / live
 #   ./06_assemble_kbds.sh submit [N] [--cohort PRJ]  submit up to N cohort chunk jobs (smallest cohorts first)
@@ -43,6 +45,14 @@ mkmap() {
       END{ for (s in n) { m=n[s]; for(i=1;i<=m;i++) a[i]=runs[s,i]; for(i=1;i<=m;i++) for(j=i+1;j<=m;j++) if(a[j]<a[i]){t=a[i];a[i]=a[j];a[j]=t}
              line=a[1]; for(i=2;i<=m;i++) line=line","a[i]; printf "%s\t%s\t%s\n", s, coh[s], line; delete a } }' "$MANIFEST" | sort > "$SMAP.tmp" && mv "$SMAP.tmp" "$SMAP"
   fi
+}
+# samples_assemble.txt (= $ASMLIST, the office's unit list): every sample_accession with at least one run in $RUNLIST that is not in runs_to_exclude.tsv
+mklist() {
+  awk -F'\t' -v L="$RUNLIST" -v X="$ASM_EXCLUDE" '
+    BEGIN{ while((getline l < L)>0){ if(l!="" && l!~/^#/) ok[l]=1 } while((getline l < X)>0){ split(l, f, "\t"); if(f[1]!="" && f[1]!~/^(#|run)/) ok[f[1]]=0 } }
+    NR==1{ for(i=1;i<=NF;i++){ if($i=="run_accession")r=i; if($i=="sample_accession")s=i }; next }
+    ok[$r] && !($s in seen) { seen[$s]=1; print $s }' "$MANIFEST" > "$ASMLIST.tmp" && mv "$ASMLIST.tmp" "$ASMLIST"
+  echo "[list] $ASMLIST: $(wc -l < "$ASMLIST") samples (runs in $(basename "$RUNLIST")$( [ -s "$ASM_EXCLUDE" ] && echo " minus $(basename "$ASM_EXCLUDE")" ))"
 }
 live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB" 'index($2, j)==1{c=substr($2, length(j)+2); sub(/\..*$/, "", c); print $1"\t"c}'; }   # id<TAB>cohort
 assembled()   { find "$ASM_DIR" -mindepth 2 -maxdepth 2 -name '*.done' -printf '%f\n' 2>/dev/null | sed 's/\.done$//'; }
@@ -89,6 +99,7 @@ submit() {
 }
 
 case "${1:-}" in
+list)    mklist ;;
 reads)
   part=$(sinfo -h -p cpu32-only -t idle -o '%D' 2>/dev/null | awk '{s+=$1} END{print ((s+0) > 0 ? "cpu32-only" : "cpu64-only")}')
   jid=$(sbatch --parsable -J "metacrc-reads" -p "$part" -N 1 -n 1 --exclusive -t 6:00:00 -o "$LOG_DIR/reads-%j.out" --wrap "bash '$SELF' reads-node") && echo "  job $jid metacrc-reads on $part (merge_runs.py --all → $READS_DIR)" ;;
