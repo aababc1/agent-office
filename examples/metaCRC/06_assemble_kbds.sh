@@ -22,6 +22,7 @@
 #   ./06_assemble_kbds.sh node <chunk-id>            (what sbatch runs)
 # Knobs (00_env_local.sh): METAFUN_DIR=$HOME/metaFun ASM_ENV=metacrc-asm ASM_ASSEMBLER=metaspades ASM_MEM_GB=120 ASM_MAX_BASES=600e9
 #   ASM_PART="cpu64-only cpu64-only-m512GB" ASM_MAX_NODES=4 ASM_TIME=96:00:00 ASM_FEED_S=900 ASM_NF_ARGS="" ASM_EXCLUDE=$PROJ/manifest/runs_to_exclude.tsv
+#   (ASM_MAX_NODES counts every live assembly job, metaFun asm_* ones included; the per-partition submit cap is the node count: cpu32 5 · cpu64 5 · m512GB 8 = 18)
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")"
@@ -54,7 +55,8 @@ mklist() {
     ok[$r] && !($s in seen) { seen[$s]=1; print $s }' "$MANIFEST" > "$ASMLIST.tmp" && mv "$ASMLIST.tmp" "$ASMLIST"
   echo "[list] $ASMLIST: $(wc -l < "$ASMLIST") samples (runs in $(basename "$RUNLIST")$( [ -s "$ASM_EXCLUDE" ] && echo " minus $(basename "$ASM_EXCLUDE")" ))"
 }
-live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB" 'index($2, j)==1{c=substr($2, length(j)+2); sub(/\..*$/, "", c); print $1"\t"c}'; }   # id<TAB>cohort
+# id<TAB>cohort of every live assembly job: this wrapper's metacrc-asm:<cohort>[.k] and metaFun's own driver asm_<cohort>[.k] (so a cohort it is running is never double-submitted)
+live_jobs() { squeue -h -u "$USER" -o '%i|%j' 2>/dev/null | awk -F'|' -v j="$JOB" 'index($2, j)==1{c=substr($2, length(j)+2)} $2 ~ /^asm_/{c=substr($2, 5)} c!=""{sub(/\..*$/, "", c); print $1"\t"c; c=""}'; }
 assembled()   { find "$ASM_DIR" -mindepth 2 -maxdepth 2 -name '*.done' -printf '%f\n' 2>/dev/null | sed 's/\.done$//'; }
 reads_ready() { find "$READS_DIR" -mindepth 2 -maxdepth 2 -name '*_2.fastq.gz' -printf '%f\n' 2>/dev/null | sed 's/_2\.fastq\.gz$//'; }
 # cohort  samples  reads_ready  assembled  live
