@@ -22,6 +22,7 @@
 #   ./06_assemble_kbds.sh node <chunk-id>            (what sbatch runs)
 # Knobs (00_env_local.sh): METAFUN_DIR=$HOME/metaFun ASM_ENV=metacrc-asm ASM_ASSEMBLER=metaspades ASM_MEM_GB=120 ASM_MAX_BASES=600e9
 #   ASM_PART="cpu64-only cpu64-only-m512GB" ASM_MAX_NODES=4 ASM_TIME=96:00:00 ASM_FEED_S=900 ASM_NF_ARGS="" ASM_EXCLUDE=$PROJ/manifest/runs_to_exclude.tsv
+#   ASM_SKIP_COHORTS="PRJEB45799 PRJNA1030952"      cohorts `submit`/`feed` never pick (tier 0: Valles-Colomer 2023 saliva/stool, bitBiome); `submit N --cohort X` still can
 #   ASM_SKIP=$PROJ/manifest/asm_skip_samples.txt   one sample per line, left out of every samplesheet (assemblies that ran for days)
 #   (ASM_MAX_NODES counts every live assembly job, metaFun asm_* ones included; the per-partition submit cap is the node count: cpu32 5 · cpu64 5 · m512GB 8 = 18)
 set -uo pipefail
@@ -30,7 +31,7 @@ cd "$(dirname "$0")"
 source ./00_env_local.sh
 : "${USER:=$(id -un)}"
 : "${QC_DIR:=$PROJ/qc}" "${READS_DIR:=$PROJ/reads}" "${ASM_DIR:=$PROJ/asm}" "${ASMLIST:=$PROJ/manifest/samples_assemble.txt}" "${METAFUN_DIR:=$HOME/metaFun}"
-: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
+: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
 : "${ASM_TIME:=96:00:00}" "${ASM_FEED_S:=900}" "${ASM_NF_ARGS:=}" "${ASM_EXCLUDE:=$PROJ/manifest/runs_to_exclude.tsv}"
 JOB=metacrc-asm
 CH="$PROJ/manifest/asm_chunks"; SMAP="$PROJ/manifest/sample_runs_all.tsv"; RUNS="$PROJ/runs/asm"; WORK="$PROJ/work/asm"
@@ -102,6 +103,7 @@ submit() {
   echo "[submit] cohorts with reads-ready samples and no live job: $(awk -F'\t' '$3>0 && $5==0' "$tbl" | wc -l) · live jobs $live · room $room node(s) on {$ASM_PART}"
   while IFS=$'\t' read -r c tot rd aa lv; do
     [ "$room" -le 0 ] && break
+    case " $ASM_SKIP_COHORTS " in *" $c "*) continue ;; esac   # tier-0 cohorts (not CRC) are never fed, whatever reads/ holds
     local n; n=$(submit_cohort "$c" "$room" | tail -1); room=$(( room - ${n:-0} ))
   done < <(awk -F'\t' '$3>0 && $5==0' "$tbl")
   rm -f "$tbl"
