@@ -4,8 +4,8 @@
 // (RFC 8291 aes128gcm) with WebCrypto, and sent straight to the browser vendors' push endpoints.
 import { b64url, b64urlDecode, b64urlText, json, nowIso } from "./util.js";
 
-export const KINDS = ["cohort_done", "stage_done", "job_failed", "probe_lost", "milestone_late", "discussion", "docs"];
-export const KIND_KO = { cohort_done: "코호트 완료", stage_done: "단계 완료", job_failed: "실패 발생", probe_lost: "프로브 끊김", milestone_late: "마일스톤 지연", discussion: "회의 새 글", docs: "새 자료" };
+export const KINDS = ["cohort_done", "stage_done", "job_failed", "probe_lost", "milestone_late", "node_free", "idle_nodes", "discussion", "docs"];
+export const KIND_KO = { cohort_done: "코호트 완료", stage_done: "단계 완료", job_failed: "실패 발생", probe_lost: "프로브 끊김", milestone_late: "마일스톤 지연", node_free: "노드 비었음", idle_nodes: "노드 놀고 있음", discussion: "회의 새 글", docs: "새 자료" };
 const enc = new TextEncoder();
 
 // ---- VAPID keys (once, into D1 settings) ----------------------------------------------------------------
@@ -152,8 +152,37 @@ export async function detectPipelineEvents(env, project, state, plan) {
     const k = `milestone:${m.name}`;
     if (mem[k] !== status) { await remember(env, project, k, status); if (!firstMs && (status === "late" || status === "overdue") && mem[k] !== "overdue") await notify(env, project, "milestone_late", `${project} · 🏁 마일스톤 ${status === "overdue" ? "기한 지남" : "지연 예상"}`, `"${m.name}" 목표 ${m.date}${eta ? ` · 예상 ${eta.slice(0, 10)}` : ""} · 진행 ${need.reduce((a, s) => a + (s.done || 0), 0).toLocaleString("en-US")}/${need.reduce((a, s) => a + (s.total || 0), 0).toLocaleString("en-US")}`, { tag: `${project}:ms:${m.name}` }); }
   }
+  await detectNodeEvents(env, project, state, mem, site);
   await remember(env, project, "probe:lastAt", state.probedAt || nowIso());
   if (mem["probe:lost"] === "1") { await remember(env, project, "probe:lost", 0); await notify(env, project, "probe_lost", `${project} · 프로브 복구`, `${site || "계산 서버"}에서 다시 신호가 옵니다`, { tag: `${project}:probe` }); }
+}
+
+/** Cluster side (from the probe's sinfo/squeue): a partition of ours that was fully busy now has an idle node → node_free
+ *  (once per partition per 30 min; says whether one of our PENDING jobs will take it); our partitions have idle nodes and
+ *  we have had no job at all for 30 min → idle_nodes (once, re-armed when a job of ours appears). */
+async function detectNodeEvents(env, project, state, mem, site) {
+  const parts = (state.cluster && state.cluster.sinfo && state.cluster.sinfo.partitions) || {};
+  const jobs = (state.cluster && state.cluster.squeue && state.cluster.squeue.jobs) || [];   // squeue -u: every job here is ours
+  const now = Date.now(); const freed = [];
+  for (const [pn, p] of Object.entries(parts)) {
+    if (!p.mine) continue;
+    const idle = Number(p.idle || 0); const k = `nodes:${pn}:idle`; const prev = mem[k];
+    if (prev !== undefined && Number(prev) === 0 && idle > 0) {
+      const kt = `nodes:${pn}:notifiedAt`;
+      if (!(mem[kt] && now - Date.parse(mem[kt]) < 30 * 60e3)) { await remember(env, project, kt, nowIso()); freed.push({ pn, idle, total: p.total, pend: jobs.filter(j => j.state === "PENDING" && j.partition === pn).length }); }
+    }
+    if (String(idle) !== String(prev)) await remember(env, project, k, idle);
+  }
+  if (freed.length) await notify(env, project, "node_free", `${project} · 🟢 노드 비었음 — ${freed.map(f => `${f.pn} ${f.idle}/${f.total}`).join(", ")}`,
+    freed.map(f => f.pend ? `${f.pn}: 우리 대기 잡 ${f.pend}개가 들어갑니다` : `${f.pn}: 우리 대기 잡 없음 → 제출 필요`).join(" · ") + (site ? ` · ${site}` : ""), { tag: `${project}:nodes` });
+  const idleMine = Object.values(parts).filter(p => p.mine).reduce((a, p) => a + Number(p.idle || 0), 0);
+  if (idleMine > 0 && jobs.length === 0) {
+    if (!mem["nodes:idleSince"]) await remember(env, project, "nodes:idleSince", nowIso());
+    else if (now - Date.parse(mem["nodes:idleSince"]) >= 30 * 60e3 && mem["nodes:idleNotified"] !== "1") {
+      await remember(env, project, "nodes:idleNotified", 1);
+      await notify(env, project, "idle_nodes", `${project} · 노드 놀고 있음 — 우리 잡 0`, `비어 있는 노드 ${idleMine}대, 30분 넘게 우리 잡이 없습니다 — 제출할 것이 남았는지 확인${site ? ` · ${site}` : ""}`, { tag: `${project}:idle` });
+    }
+  } else if (mem["nodes:idleSince"] || mem["nodes:idleNotified"] === "1") { await remember(env, project, "nodes:idleSince", ""); await remember(env, project, "nodes:idleNotified", 0); }
 }
 
 /** Cron: probes silent for 2h+ (plan alerts heartbeat_lost_2h) → one notice; cleared by detectPipelineEvents when it returns. */

@@ -990,7 +990,7 @@ function renderPeople() {
 }
 // ================================================================ per-floor push notifications (Worker Web Push)
 const PN = {prefs: {}, devices: 0, key: null, kinds: [], ko: {}};
-const DEFAULT_KINDS = ['cohort_done', 'stage_done', 'job_failed', 'probe_lost', 'milestone_late', 'discussion', 'docs'];
+const DEFAULT_KINDS = ['cohort_done', 'stage_done', 'job_failed', 'probe_lost', 'milestone_late', 'node_free', 'idle_nodes', 'discussion', 'docs'];
 async function loadPushPrefs() {
   if (MODE !== 'worker' || !WK.user) return;
   try { const r = await wkFetch('/api/push/prefs'); PN.prefs = r.prefs || {}; PN.devices = r.devices || 0; } catch (e) { /* no prefs yet */ }
