@@ -366,6 +366,7 @@ select.btn{padding:4px 6px}
         <span class="sub" id="t-session"></span>
         <span class="pill" id="t-status"><span class="lamp"></span><span>…</span></span>
         <span class="auth" id="auth"></span>
+        <span class="sub" id="t-build" title="뷰어 빌드 — 폰에서 보이는 숫자가 이것과 다르면 옛 셸이 떠 있는 것"></span>
         <div class="controls">
           <button class="btn on" id="b-live" type="button">라이브</button>
           <button class="btn" id="b-replay" type="button">▶ 다시보기</button>
@@ -1183,6 +1184,7 @@ function renderPipeline() {
   } else html += `<div class="ms none">🏁 마일스톤 미설정 — plan.yaml의 <code>milestones</code>에 날짜와 필요한 단계를 적으면 D-day와 ETA 비교가 여기 뜹니다.</div>`;
   const use3d = view3d(); const b3 = $('pp-3d'); if (b3) { b3.textContent = use3d ? '2D' : '3D'; b3.hidden = !(window.Office3D && Office3D.supported()); }
   if (use3d) html += `<div class="s3d" id="s3d"></div>`;
+  else if (V3.failed || !(window.Office3D && Office3D.supported())) html += `<div style="font-size:12px;margin:4px 0 8px;color:var(--muted,#7a8699)">3D 비활성 — ${esc(V3.reason || (!window.Office3D ? 'office3d.js 미로드(옛 셸·캐시)' : 'WebGL 사용 불가'))} · 층별 2D로 표시</div>`;
   // ---- 2F 생산 라인
   if (!PV.sel || !info[PV.sel]) PV.sel = order.find(n => info[n].state === 'run') || order.find(n => info[n].planned && !info[n].complete) || order[0];
   if (!use3d) html += `<div class="lvl"><div class="fl">2F 생산 라인 <span class="r">${roll ? `▶ ${roll.running} 실행 · ✕ ${roll.failed} 실패 · ${Object.values(info).filter(i => i.complete).length}/${order.length} 단계 완료` : ''}</span></div><div class="line">`;
@@ -1238,7 +1240,7 @@ function renderPipeline() {
   const detail = () => { const i = info[PV.sel]; const box = $('sdetail'); if (!i || !box) return; box.innerHTML = stageDetailHtml(i); };
   detail();
   if (use3d) { const host = $('s3d'); const d3 = data3d(order, info, plan, run, ms);
-    Office3D.mount(host, {detailHtml: n => info[n] ? `<div class="sdetail open">${stageDetailHtml(info[n])}</div>` : '', onAgent: id => selectSession(id)}).then(() => Office3D.sync(d3)).catch(e => { console.warn('3D off:', e.message); V3.failed = true; renderPipeline(); }); }
+    Office3D.mount(host, {detailHtml: n => info[n] ? `<div class="sdetail open">${stageDetailHtml(info[n])}</div>` : '', onAgent: id => selectSession(id)}).then(() => Office3D.sync(d3)).catch(e => { console.warn('3D off:', e.message); V3.failed = true; V3.reason = e.message; renderPipeline(); }); }
   const b3b = $('pp-3d'); if (b3b) b3b.onclick = () => { V3.want = !view3d(); try { localStorage.setItem('office.view3d', V3.want ? '1' : '0'); } catch (e) { /* no storage */ } renderPipeline(); };
   el.querySelectorAll('.mc').forEach(g => { const go = () => { const box = $('sdetail'); if (PV.sel === g.dataset.n && box) box.classList.toggle('open'); else if (box) box.classList.add('open'); PV.sel = g.dataset.n; el.querySelectorAll('.mc').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
   const cbh = $('cbh'); if (cbh) cbh.onclick = () => { const b = $('cb'); b.classList.toggle('open'); cbh.querySelector('.tg').textContent = b.classList.contains('open') ? '▾' : '▸ 펼치기'; };
@@ -1488,7 +1490,15 @@ boot();
 })();
 </script>
 <!--OFFICE:PWA-START-->
-<script>if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) { navigator.serviceWorker.register('sw.js').catch(() => {}); }</script>
+<script>
+const OFFICE_BUILD = '2026-11-08.1';
+(function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
+if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
+  navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
+  let had = !!navigator.serviceWorker.controller;   // first install must not reload; a controller swap after that is a new deploy
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) { had = true; return; } let n = 0; try { n = +(sessionStorage.getItem('office.reloaded') || 0); } catch (e) { /* no storage */ } if (n >= 2) return; try { sessionStorage.setItem('office.reloaded', String(n + 1)); } catch (e) { /* no storage */ } location.reload(); });
+}
+</script>
 <!--OFFICE:PWA-END-->
 <!--OFFICE:INNER-END-->
 </body>
