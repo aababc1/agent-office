@@ -22,6 +22,7 @@
 #   ./06_assemble_kbds.sh node <chunk-id>            (what sbatch runs)
 # Knobs (00_env_local.sh): METAFUN_DIR=$HOME/metaFun ASM_ENV=metacrc-asm ASM_ASSEMBLER=metaspades ASM_MEM_GB=120 ASM_MAX_BASES=600e9
 #   ASM_PART="cpu64-only cpu64-only-m512GB" ASM_MAX_NODES=4 ASM_TIME=96:00:00 ASM_FEED_S=900 ASM_NF_ARGS="" ASM_EXCLUDE=$PROJ/manifest/runs_to_exclude.tsv
+#   ASM_SKIP=$PROJ/manifest/asm_skip_samples.txt   one sample per line, left out of every samplesheet (assemblies that ran for days)
 #   (ASM_MAX_NODES counts every live assembly job, metaFun asm_* ones included; the per-partition submit cap is the node count: cpu32 5 · cpu64 5 · m512GB 8 = 18)
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -29,7 +30,7 @@ cd "$(dirname "$0")"
 source ./00_env_local.sh
 : "${USER:=$(id -un)}"
 : "${QC_DIR:=$PROJ/qc}" "${READS_DIR:=$PROJ/reads}" "${ASM_DIR:=$PROJ/asm}" "${ASMLIST:=$PROJ/manifest/samples_assemble.txt}" "${METAFUN_DIR:=$HOME/metaFun}"
-: "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
+: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
 : "${ASM_TIME:=96:00:00}" "${ASM_FEED_S:=900}" "${ASM_NF_ARGS:=}" "${ASM_EXCLUDE:=$PROJ/manifest/runs_to_exclude.tsv}"
 JOB=metacrc-asm
 CH="$PROJ/manifest/asm_chunks"; SMAP="$PROJ/manifest/sample_runs_all.tsv"; RUNS="$PROJ/runs/asm"; WORK="$PROJ/work/asm"
@@ -79,6 +80,9 @@ submit_cohort() {   # $1 = BioProject, $2 = max jobs; chunks come from make_asm_
     # largest samples first (base_count, column 5): Nextflow starts tasks in sheet order, so the chunk's tail is made of small
     # samples and the node is not left running 1–2 long assemblies on 64 cores (seen 2026-11-08: load 8–16 on 1 TB nodes)
     { head -1 "$sheet"; tail -n +2 "$sheet" | sort -t, -k5,5gr; } > "$sheet.tmp" && mv -f "$sheet.tmp" "$sheet"
+    # ASM_SKIP: one sample_accession per line (pathological assemblies that held a node for days) → dropped from the sheet, listed in the log
+    if [ -s "$ASM_SKIP" ]; then awk -F, -v S="$ASM_SKIP" 'BEGIN{while((getline l<S)>0){sub(/[ \t#].*$/,"",l); if(l!="") skip[l]=1}} NR==1||!($1 in skip)' "$sheet" > "$sheet.tmp" && mv -f "$sheet.tmp" "$sheet"
+      [ "$(wc -l < "$sheet")" -gt 1 ] || { echo "  $id: every sample is in $(basename "$ASM_SKIP") — nothing to submit" >&2; continue; }; fi
     k=$(basename "$sheet" | sed -n 's/^samplesheet\.\([0-9]*\)\.csv$/\1/p'); id="$c${k:+.$k}"; [ -z "$k" ] || { mkdir -p "$RUNS/$id"; cp -f "$sheet" "$RUNS/$id/samplesheet.csv"; }
     [ -s "$CH/chunk.$id.job" ] && squeue -h -j "$(cat "$CH/chunk.$id.job")" >/dev/null 2>&1 && continue   # already queued
     part="$(pick_part)"; cores=$(sinfo -h -p "$part" -o '%c' 2>/dev/null | head -1); [ -n "$cores" ] || cores=64
