@@ -32,6 +32,8 @@ cd "$(dirname "$0")"
 source ./00_env_local.sh
 : "${USER:=$(id -un)}"
 : "${QC_DIR:=$PROJ/qc}" "${READS_DIR:=$PROJ/reads}" "${ASM_DIR:=$PROJ/asm}" "${ASMLIST:=$PROJ/manifest/samples_assemble.txt}" "${METAFUN_DIR:=$HOME/metaFun}"
+# metaFun files: fixed names, location found once under $METAFUN_DIR (the layout moved between patches); override with ASM_SHEET_PY / ASM_MERGE_PY / ASM_NF / ASM_NF_CONFIG
+_mf() { local v="$1" name="$2" hit; eval "hit=\${$v:-}"; [ -n "$hit" ] || hit=$(find "$METAFUN_DIR" -name "$name" -not -path '*/work/*' -print -quit 2>/dev/null); [ -s "$hit" ] || { echo "[06] $name not found under $METAFUN_DIR (set $v=/path)" >&2; exit 2; }; echo "$hit"; }
 : "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MEM_GB_CPU32:=100}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
 : "${ASM_TIME:=96:00:00}" "${ASM_FEED_S:=900}" "${ASM_NF_ARGS:=}" "${ASM_EXCLUDE:=$PROJ/manifest/runs_to_exclude.tsv}"
 JOB=metacrc-asm
@@ -75,7 +77,7 @@ pick_part() { local best="" bestn=-1 p n; for p in $ASM_PART; do n=$(sinfo -h -p
 submit_cohort() {   # $1 = BioProject, $2 = max jobs; chunks come from make_asm_samplesheet.py --max-bases (samplesheet.csv or samplesheet.<k>.csv)
   local c="$1" room="${2:-1}" rd="$RUNS/$c" part cores sub=0 sheet k id jid
   mkdir -p "$rd"
-  python3 "$METAFUN_DIR/scripts/assembly_kbds/make_asm_samplesheet.py" --manifest "$MANIFEST" --reads-dir "$READS_DIR" --cohort "$c" --skip-done "$ASM_DIR" --max-bases "$ASM_MAX_BASES" --out "$rd/samplesheet.csv" \
+  python3 "$(_mf ASM_SHEET_PY make_asm_samplesheet.py)" --manifest "$MANIFEST" --reads-dir "$READS_DIR" --cohort "$c" --skip-done "$ASM_DIR" --max-bases "$ASM_MAX_BASES" --out "$rd/samplesheet.csv" \
     || { echo "[submit] $c: samplesheet failed" >&2; return 1; }
   for sheet in "$rd"/samplesheet.csv "$rd"/samplesheet.*.csv; do
     [ -s "$sheet" ] || continue; [ "$(wc -l < "$sheet")" -gt 1 ] || continue; [ "$sub" -lt "$room" ] || break
@@ -118,7 +120,7 @@ reads)
 reads-node)
   if ! command -v conda >/dev/null 2>&1; then for c in "${CONDA_ROOT:-}" "$HOME/miniconda3" "$HOME/anaconda3" /apps/application/miniconda3; do [ -n "$c" ] && [ -f "$c/etc/profile.d/conda.sh" ] && { source "$c/etc/profile.d/conda.sh"; break; }; done; fi
   eval "$(conda shell.bash hook)"; conda activate "$ASM_ENV" || { echo "[reads] conda env $ASM_ENV not found"; exit 1; }
-  python3 "$METAFUN_DIR/scripts/assembly_kbds/merge_runs.py" --manifest "$MANIFEST" --qc-dir "$QC_DIR" --out-dir "$READS_DIR" --all; echo "[reads] exit $? · ready $(reads_ready | wc -l)" ;;
+  python3 "$(_mf ASM_MERGE_PY merge_runs.py)" --manifest "$MANIFEST" --qc-dir "$QC_DIR" --out-dir "$READS_DIR" --all; echo "[reads] exit $? · ready $(reads_ready | wc -l)" ;;
 pending)
   mkmap; printf '%-14s %7s %11s %9s %5s\n' cohort samples reads_ready assembled live
   cohort_table | awk -F'\t' '{printf "%-14s %7d %11d %9d %5s\n", $1,$2,$3,$4,($5?"▶"$5:"")}'
@@ -144,7 +146,7 @@ node)
   LOADF="$CH/chunk.$ID.load"
   ( while :; do printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$(hostname)" "$(cut -d' ' -f1 /proc/loadavg)" "$CORES" "$(pgrep -c -f spades-core)" "$(pgrep -c -f megahit_core)" "$ID" > "$LOADF.tmp" && mv "$LOADF.tmp" "$LOADF"; sleep 60; done ) &
   LOADPID=$!; trap 'kill $LOADPID 2>/dev/null; rm -f "$LOADF"' EXIT
-  nextflow run "$METAFUN_DIR/nf_scripts/ASSEMBLY_kbds.nf" -c "$METAFUN_DIR/config/kbds.config" -profile kbds \
+  nextflow run "$(_mf ASM_NF ASSEMBLY_kbds.nf)" -c "$(_mf ASM_NF_CONFIG kbds.config)" -profile kbds \
     --samplesheet "$PWD/samplesheet.csv" --outdir "$ASM_DIR" --run_dir "$PWD" --work_dir "$WORK/${ID}_$ASM_ASSEMBLER" --assembler "$ASM_ASSEMBLER" --cpus "$CPUS" --mem_gb "$MEM" -resume $ASM_NF_ARGS
   RC=$?; echo "[node] nextflow exit $RC · done $(ls "$ASM_DIR/$C"/*.done 2>/dev/null | wc -l)"; exit $RC ;;
 *)       sed -n '13,22p' "$SELF" ;;
