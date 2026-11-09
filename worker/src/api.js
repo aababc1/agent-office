@@ -1,7 +1,10 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, memberRole, unauthorized } from "./auth.js";
-import { addMember, driveEnabled, driveListing, ensureSubfolder, fileMeta, folderIdOf, startUpload, topicFolderName, uploadSmall } from "./gdrive.js";
+import { createAppFolder, driveEnabled, driveListing, ensureSubfolder, fileMeta, folderIdOf, listFolder, saEmail, share, startUpload, topicFolderName, uploadSmall } from "./gdrive.js";
+import { googleAccount, googleDisconnect, googleEnabled, ownerToken } from "./google.js";
+import { upsertDocsConfig } from "./ingest.js";
 import { detectDocsEvents } from "./push.js";
+import { nowIso } from "./util.js";
 import { recentNotifications } from "./push.js";
 import { json, timingSafeEqual } from "./util.js";
 import * as disc from "./discussions.js";
@@ -106,62 +109,101 @@ function docsBadge(r, gh) {
   return { docsAt: at, docsN: n, hasDrive };
 }
 
-// ---- 자료실 업로드: any collaborator (Read is enough) puts a file into the floor's Shared Drive folder through the service account.
-//   POST …/drive/upload   {name, mime, size}  → {sessionUri}: the browser PUTs the bytes straight to Google (any size, nothing passes through here)
-//   POST …/drive/upload?proxy=1  (raw body, x-file-name / content-type headers, ≤ 90 MB) → {file}: fallback when the browser cannot reach the session URI
-//   POST …/drive/uploaded {id} → {file}: confirms the file landed in the folder, refreshes the listing, rings "새 자료"
+// ---- 자료실 업로드 ------------------------------------------------------------------------------------------------
+// Two ways a floor can take uploads from any collaborator (Read on the data repo is enough):
+//   owner mode — the floor owner connected a Google account (/auth/google); the Worker creates files with THAT account
+//                (owner = owner, quota = owner's) inside an app-made folder in the owner's My Drive (docs_json.appFolder);
+//   sa mode    — the floor folder is in a Shared Drive where the service account is a member (quota belongs to the drive).
+//   POST …/drive/status           → who/where uploads go, for the 자료실 header
+//   POST …/drive/connect-folder   (owner) make "<project> 자료실" in the owner's Drive, share it read-only with the service account (listing)
+//   POST …/drive/disconnect       (owner) forget the Google account
+//   POST …/drive/upload   {name, mime, size, topic?} → {sessionUri, folder}: the browser PUTs the bytes straight to Google
+//   POST …/drive/upload?proxy=1   raw body ≤ 90 MB → {file}: fallback when the browser cannot reach Google
+//   POST …/drive/uploaded {id}    → confirm, refresh listing, ring "새 자료"
+//   POST …/drive/folder   {topic} → the topic's sub-folder "#n 제목" (created on demand)
+//   POST …/drive/member   (owner) {email, role} | {anyone: true} → share the upload folder
 export async function driveUpload(request, env, name, step) {
   const g = await gate(request, env, name); if (g.deny) return g.deny;
-  if (!driveEnabled(env)) return withCookie(json({ error: "Drive 업로드가 꺼져 있습니다 (GDRIVE_SA_KEY 없음)" }, 503), g.setCookie);
   const row = await env.DB.prepare("SELECT docs_json FROM projects WHERE name=?").bind(name).first();
   let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
-  const fid = folderIdOf(cfg.drive); if (!fid) return withCookie(json({ error: "이 층에 Drive 폴더가 설정되지 않았습니다 (office.json drive)" }, 400), g.setCookie);
-  const url = new URL(request.url);
-  // a topic (discussion #n + title) gets its own sub-folder "#n 제목" under the floor folder; files of that topic go there
-  const topicFolder = async t => (t && (t.number || t.title)) ? ensureSubfolder(env, fid, topicFolderName(t.number, t.title)) : null;
+  const url = new URL(request.url); const isAdmin = async () => (await memberRole(env, g.session, g.project.repo)) === "admin";
+  const acct = googleEnabled(env) ? await googleAccount(env, name) : null;
+  // where uploads go
+  let mode = null, fid = null, token = null;
+  if (acct && cfg.appFolder && cfg.appFolder.id) { mode = "owner"; fid = cfg.appFolder.id; }
+  else if (driveEnabled(env) && folderIdOf(cfg.drive)) { mode = "sa"; fid = folderIdOf(cfg.drive); }
+  const reply = (o, st = 200) => withCookie(json(o, st), g.setCookie);
   try {
-    if (step === "member") {   // owner only: give a Google account access to the floor folder (reader / commenter / writer)
-      if ((await memberRole(env, g.session, g.project.repo)) !== "admin") return withCookie(json({ error: "소유자만 멤버를 추가할 수 있습니다" }, 403), g.setCookie);
-      const body = await request.json().catch(() => ({})); const email = String(body.email || "").trim(); const role = ["reader", "commenter", "writer"].includes(body.role) ? body.role : "reader";
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return withCookie(json({ error: "이메일 형식이 아닙니다" }, 400), g.setCookie);
-      return withCookie(json({ ok: true, permission: await addMember(env, fid, email, role) }), g.setCookie);
+    if (step === "status") return reply({ google: { enabled: googleEnabled(env), account: acct }, appFolder: cfg.appFolder || null, saEmail: saEmail(env), mode, legacyDrive: cfg.drive || null });
+    if (step === "disconnect") { if (!(await isAdmin())) return reply({ error: "소유자만" }, 403); await googleDisconnect(env, name); return reply({ ok: true }); }
+    if (step === "connect-folder") {
+      if (!(await isAdmin())) return reply({ error: "소유자만" }, 403);
+      if (!acct) return reply({ error: "먼저 Google 계정을 연결하세요" }, 400);
+      const t = await ownerToken(env, name);
+      const folder = await createAppFolder(env, t, `${name} 자료실`);
+      const sa = saEmail(env); let shared = false; if (sa) { try { await share(env, t, folder.id, { email: sa, role: "reader" }); shared = true; } catch (e) { folder.shareError = e.message; } }
+      await upsertDocsConfig(env, name, { appFolder: { ...folder, by: acct.email, at: nowIso(), saShared: shared } });
+      return reply({ ok: true, appFolder: folder, saShared: shared });
+    }
+    if (!mode) return reply({ error: acct ? "자료실 폴더가 아직 없습니다 — '폴더 만들기'를 누르세요" : "업로드 경로가 없습니다: 소유자가 Google 계정을 연결하거나(자료실 → Google 연결) 폴더가 공유 드라이브여야 합니다" }, 400);
+    if (mode === "owner") token = await ownerToken(env, name);
+    const topicFolder = async t => (t && (t.number || t.title)) ? ensureSubfolder(env, fid, topicFolderName(t.number, t.title), token) : null;
+    const listUrl = mode === "owner" ? cfg.appFolder.url : cfg.drive;
+    if (step === "member") {
+      if (!(await isAdmin())) return reply({ error: "소유자만 멤버를 추가할 수 있습니다" }, 403);
+      const body = await request.json().catch(() => ({})); const role = ["reader", "commenter", "writer"].includes(body.role) ? body.role : "reader";
+      if (body.anyone) return reply({ ok: true, permission: await share(env, token, fid, { anyone: true, role: "reader" }) });
+      const email = String(body.email || "").trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply({ error: "이메일 형식이 아닙니다" }, 400);
+      return reply({ ok: true, permission: await share(env, token, fid, { email, role }) });
     }
     if (step === "upload" && url.searchParams.has("proxy")) {
       const fname = decodeURIComponent(request.headers.get("x-file-name") || "upload.bin"); const len = Number(request.headers.get("content-length") || 0);
-      if (len > 90 * 1024 * 1024) return withCookie(json({ error: "90 MB까지만 서버 경유 업로드가 됩니다" }, 413), g.setCookie);
+      if (len > 90 * 1024 * 1024) return reply({ error: "90 MB까지만 서버 경유 업로드가 됩니다" }, 413);
       const tf = await topicFolder({ number: url.searchParams.get("topic_n"), title: url.searchParams.get("topic") });
-      const file = await uploadSmall(env, tf ? tf.id : fid, { name: fname, mime: request.headers.get("content-type") }, await request.arrayBuffer());
-      await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file), folder: tf }), g.setCookie);
+      const file = await uploadSmall(env, tf ? tf.id : fid, { name: fname, mime: request.headers.get("content-type"), token }, await request.arrayBuffer());
+      await afterUpload(env, name, listUrl, token); return reply({ file: slim(file), folder: tf });
     }
     const body = await request.json().catch(() => ({}));
     if (step === "upload") {
-      if (!body.name) return withCookie(json({ error: "name missing" }, 400), g.setCookie);
+      if (!body.name) return reply({ error: "name missing" }, 400);
       const tf = await topicFolder(body.topic);
-      return withCookie(json({ sessionUri: await startUpload(env, tf ? tf.id : fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0, origin: request.headers.get("origin") || url.origin }), folder: tf }), g.setCookie);
+      return reply({ sessionUri: await startUpload(env, tf ? tf.id : fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0, origin: request.headers.get("origin") || url.origin, token }), folder: tf });
     }
-    if (step === "folder") { const tf = await topicFolder(body.topic); const root = await fileMeta(env, fid); return withCookie(json({ folder: tf, root: { id: root.id, name: root.name, driveId: root.driveId || null, sharedDrive: !!root.driveId } }), g.setCookie); }
-    if (!body.id) return withCookie(json({ error: "id missing" }, 400), g.setCookie);
-    const file = await fileMeta(env, body.id); const parent = (file.parents || [])[0];
-    const inside = parent === fid || (parent && ((await fileMeta(env, parent).catch(() => ({}))).parents || []).includes(fid));
-    if (!inside) return withCookie(json({ error: "그 파일은 이 층의 폴더에 없습니다" }, 400), g.setCookie);
-    await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file) }), g.setCookie);
-  } catch (e) { return withCookie(json({ error: e.message }, 502), g.setCookie); }
+    if (step === "folder") { const tf = await topicFolder(body.topic); const root = await fileMeta(env, fid, token); return reply({ folder: tf, root: { id: root.id, name: root.name, driveId: root.driveId || null, sharedDrive: !!root.driveId }, mode }); }
+    if (step === "uploaded") {
+      if (!body.id) return reply({ error: "id missing" }, 400);
+      const file = await fileMeta(env, body.id, token); const parent = (file.parents || [])[0];
+      const inside = parent === fid || (parent && ((await fileMeta(env, parent, token).catch(() => ({}))).parents || []).includes(fid));
+      if (!inside) return reply({ error: "그 파일은 이 층의 폴더에 없습니다" }, 400);
+      await afterUpload(env, name, listUrl, token); return reply({ file: slim(file) });
+    }
+    return reply({ error: "unknown step" }, 404);
+  } catch (e) { return reply({ error: e.message }, 502); }
 }
 const slim = f => ({ id: f.id, name: f.name, mime: f.mimeType, size: f.size ? Number(f.size) : null, modifiedAt: f.modifiedTime, url: f.webViewLink || `https://drive.google.com/open?id=${f.id}` });
-async function afterUpload(env, name, driveUrl) { const d = await driveListing(env, name, driveUrl, { force: true }); if (!d.error) await detectDocsEvents(env, name, d.files, "drive"); }
+async function afterUpload(env, name, driveUrl, token) { const d = await driveListing(env, name, driveUrl, { force: true, token }); if (!d.error) await detectDocsEvents(env, name, d.files, "drive"); }
 
-// ---- 자료실: docs/** of the data repo (tracked from pushes) + a Drive folder (service-account listing) / pinned links from office.json or plan.docs
+// ---- 자료실: docs/** of the data repo (tracked from pushes) + Drive (app folder and/or the office.json folder) / pinned links
 export async function docs(request, env, name) {
   const g = await gate(request, env, name); if (g.deny) return g.deny;
   const row = await env.DB.prepare("SELECT docs_json FROM projects WHERE name=?").bind(name).first();
   let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
-  const repo = g.project.repo; const branch = cfg.branch || "main";
-  const drive = cfg.drive ? await driveListing(env, name, cfg.drive, { force: new URL(request.url).searchParams.has("refresh") }) : null;
+  const repo = g.project.repo; const branch = cfg.branch || "main"; const force = new URL(request.url).searchParams.has("refresh");
+  const acct = googleEnabled(env) ? await googleAccount(env, name) : null;
+  const app = acct && cfg.appFolder && cfg.appFolder.id ? cfg.appFolder : null;
+  // primary listing: the app folder (owner mode) else the office.json folder; a differing office.json folder is listed too, marked legacy
+  let token = null; if (app && !driveEnabled(env)) { try { token = await ownerToken(env, name); } catch { token = null; } }
+  const primaryUrl = app ? app.url : cfg.drive;
+  const drive = primaryUrl ? await driveListing(env, name, primaryUrl, { force, token }) : null;
+  let legacy = null; if (app && cfg.drive && folderIdOf(cfg.drive) !== app.id && driveEnabled(env)) { try { legacy = { files: await listFolder(env, folderIdOf(cfg.drive)) }; } catch (e) { legacy = { files: [], error: e.message }; } }
   const files = ((await env.DB.prepare("SELECT path, size, by, sha, updated_at FROM docs WHERE project=? ORDER BY updated_at DESC, path").bind(name).all()).results || [])
     .map(d => ({ path: d.path, name: d.path.replace(/^docs\//, ""), size: d.size, by: d.by, updatedAt: d.updated_at,
                  url: repo ? `https://github.com/${repo}/blob/${encodeURIComponent(branch)}/${d.path.split("/").map(encodeURIComponent).join("/")}` : null }));
-  const driveUrl = cfg.drive ? String(cfg.drive).replace(/\/drive\/u\/\d+\//, "/drive/") : null;   // "/u/2/" is the author's account slot; others open it with their own
-  return withCookie(json({ drive: driveUrl, driveEnabled: driveEnabled(env), driveFiles: drive ? drive.files : [], driveAt: drive ? drive.at : null, driveError: drive ? drive.error : null,
+  const clean = u => u ? String(u).replace(/\/drive\/u\/\d+\//, "/drive/") : null;   // "/u/2/" is the author's account slot; others open it with their own
+  const mode = app ? "owner" : (driveEnabled(env) && folderIdOf(cfg.drive) ? "sa" : null);
+  return withCookie(json({ drive: clean(primaryUrl), legacyDrive: app ? clean(cfg.drive) : null, legacyFiles: legacy ? legacy.files : [], legacyError: legacy ? legacy.error : null,
+                           driveEnabled: driveEnabled(env) || !!token, driveFiles: drive ? drive.files : [], driveAt: drive ? drive.at : null, driveError: drive ? drive.error : null,
+                           upload: { mode, email: acct ? acct.email : null, folder: app ? app.name : null }, google: { enabled: googleEnabled(env), account: acct }, appFolder: app,
                            links: Array.isArray(cfg.links) ? cfg.links : [], branch, repo,
                            uploadUrl: repo ? `https://github.com/${repo}/upload/${encodeURIComponent(branch)}/docs` : null,
                            folderUrl: repo ? `https://github.com/${repo}/tree/${encodeURIComponent(branch)}/docs` : null, files }), g.setCookie);

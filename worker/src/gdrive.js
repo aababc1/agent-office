@@ -42,8 +42,8 @@ async function accessToken(env) {
 const FIELDS = "nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink,lastModifyingUser(displayName,emailAddress),shortcutDetails(targetId,targetMimeType))";
 
 /** Files of a folder (and one level of subfolders), newest first. Capped at `max` entries. */
-export async function listFolder(env, folderId, { depth = 1, max = 400 } = {}) {
-  const token = await accessToken(env);
+export async function listFolder(env, folderId, { depth = 1, max = 400, token } = {}) {
+  token = token || await accessToken(env);
   const out = [];
   async function walk(parent, path, d) {
     let pageToken = null;
@@ -78,8 +78,8 @@ const META = "id,name,mimeType,size,modifiedTime,webViewLink,parents,driveId";
 
 /** Start a resumable upload into `folderId`; returns the session URI the browser PUTs the bytes to (no token needed on that URI). */
 // `origin` = the browser's Origin: Google answers CORS on the session URI only for the origin that opened the session
-export async function startUpload(env, folderId, { name, mime, size, origin }) {
-  const token = await accessToken(env);
+export async function startUpload(env, folderId, { name, mime, size, origin, token }) {
+  token = token || await accessToken(env);
   const r = await fetch(`${API(env)}/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=${encodeURIComponent(META)}`, {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": mime || "application/octet-stream", ...(size ? { "x-upload-content-length": String(size) } : {}), ...(origin ? { origin } : {}) },
     body: JSON.stringify({ name, parents: [folderId] }) });
@@ -88,8 +88,8 @@ export async function startUpload(env, folderId, { name, mime, size, origin }) {
   return uri;
 }
 /** Small files through the Worker (browser → Worker → Drive, one multipart request). */
-export async function uploadSmall(env, folderId, { name, mime }, bytes) {
-  const token = await accessToken(env); const boundary = "office" + crypto.randomUUID().replace(/-/g, "");
+export async function uploadSmall(env, folderId, { name, mime, token }, bytes) {
+  token = token || await accessToken(env); const boundary = "office" + crypto.randomUUID().replace(/-/g, "");
   const enc = new TextEncoder(); const head = enc.encode(`--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [folderId] })}\r\n--${boundary}\r\ncontent-type: ${mime || "application/octet-stream"}\r\n\r\n`);
   const tail = enc.encode(`\r\n--${boundary}--`); const body = new Uint8Array(head.length + bytes.byteLength + tail.length); body.set(head, 0); body.set(new Uint8Array(bytes), head.length); body.set(tail, head.length + bytes.byteLength);
   const r = await fetch(`${API(env)}/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${encodeURIComponent(META)}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": `multipart/related; boundary=${boundary}` }, body });
@@ -97,8 +97,8 @@ export async function uploadSmall(env, folderId, { name, mime }, bytes) {
   return r.json();
 }
 /** Sub-folder `name` directly under `parentId` (a topic's folder); created when missing. */
-export async function ensureSubfolder(env, parentId, name) {
-  const token = await accessToken(env); const H = { authorization: `Bearer ${token}` };
+export async function ensureSubfolder(env, parentId, name, token) {
+  token = token || await accessToken(env); const H = { authorization: `Bearer ${token}` };
   const q = `'${parentId}' in parents and name = '${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   const u = new URL(`${API(env)}/drive/v3/files`); u.searchParams.set("q", q); u.searchParams.set("fields", "files(id,name,webViewLink)"); u.searchParams.set("supportsAllDrives", "true"); u.searchParams.set("includeItemsFromAllDrives", "true"); u.searchParams.set("pageSize", "5");
   const r = await fetch(u, { headers: H }); if (!r.ok) throw new Error(`drive folder lookup ${r.status}`);
@@ -108,8 +108,8 @@ export async function ensureSubfolder(env, parentId, name) {
   const f = await c.json(); return { id: f.id, name: f.name, url: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`, created: true };
 }
 /** Give `email` access to the floor's folder (in a Shared Drive this is folder-level sharing; the service account needs Manager/Content manager rights). */
-export async function addMember(env, folderId, email, role) {
-  const token = await accessToken(env);
+export async function addMember(env, folderId, email, role, token) {
+  token = token || await accessToken(env);
   const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(folderId)}/permissions?supportsAllDrives=true&sendNotificationEmail=true&fields=id,role,emailAddress`, {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ type: "user", role, emailAddress: email }) });
   if (!r.ok) throw new Error(`drive permission ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -117,24 +117,40 @@ export async function addMember(env, folderId, email, role) {
 }
 /** Folder name for a discussion topic: "#12 제목", filesystem-safe, ≤ 80 chars. */
 export const topicFolderName = (number, title) => `${number ? `#${number} ` : ""}${String(title || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim()}`.slice(0, 80).trim() || (number ? `#${number}` : "주제");
-export async function fileMeta(env, id) {
-  const token = await accessToken(env);
+export async function fileMeta(env, id, token) {
+  token = token || await accessToken(env);
   const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=${encodeURIComponent(META)}`, { headers: { authorization: `Bearer ${token}` } });
   if (!r.ok) throw new Error(`drive file ${r.status}`);
   return r.json();
 }
 
+/** The service account's e-mail (shared into folders so the Worker can list them). */
+export function saEmail(env) { try { return JSON.parse(env.GDRIVE_SA_KEY || "{}").client_email || null; } catch { return null; } }
+/** The app-made upload folder in the owner's My Drive (drive.file can only use folders the app created). */
+export async function createAppFolder(env, token, name) {
+  const r = await fetch(`${API(env)}/drive/v3/files?supportsAllDrives=true&fields=id,name,webViewLink`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder" }) });
+  if (!r.ok) throw new Error(`drive folder create ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  const f = await r.json(); return { id: f.id, name: f.name, url: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}` };
+}
+/** Share a file/folder (anyone-with-link when `email` is null). */
+export async function share(env, token, fileId, { email, role, anyone }) {
+  const body = anyone ? { type: "anyone", role: role || "reader" } : { type: "user", role: role || "reader", emailAddress: email };
+  const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true&sendNotificationEmail=${anyone ? "false" : "true"}&fields=id,role,type,emailAddress`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`drive permission ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+
 /** Cached listing in projects.drive_json; refreshed when older than `maxAgeMs` (or forced). Errors keep the last good list. */
-export async function driveListing(env, project, driveUrl, { force = false, maxAgeMs = 120e3 } = {}) {
+export async function driveListing(env, project, driveUrl, { force = false, maxAgeMs = 120e3, token = null } = {}) {
   const fid = folderIdOf(driveUrl);
   if (!fid) return { folder: null, at: null, files: [], error: "no folder id in the drive url" };
   const row = await env.DB.prepare("SELECT drive_json FROM projects WHERE name=?").bind(project).first();
   let cache = null; try { cache = row && row.drive_json ? JSON.parse(row.drive_json) : null; } catch { cache = null; }
   const fresh = cache && cache.folder === fid && cache.at && Date.now() - Date.parse(cache.at) < maxAgeMs;
   if (fresh && !force) return cache;
-  if (!driveEnabled(env)) return { folder: fid, at: null, files: (cache && cache.files) || [], error: "GDRIVE_SA_KEY not set" };
+  if (!driveEnabled(env) && !token) return { folder: fid, at: null, files: (cache && cache.files) || [], error: "GDRIVE_SA_KEY not set" };
   let next;
-  try { next = { folder: fid, at: new Date().toISOString(), files: await listFolder(env, fid), error: null }; }
+  try { next = { folder: fid, at: new Date().toISOString(), files: await listFolder(env, fid, { token: driveEnabled(env) ? null : token }), error: null }; }
   catch (e) { next = { folder: fid, at: new Date().toISOString(), files: (cache && cache.folder === fid && cache.files) || [], error: e.message }; }
   await env.DB.prepare("UPDATE projects SET drive_json=? WHERE name=?").bind(JSON.stringify(next), project).run();
   return next;

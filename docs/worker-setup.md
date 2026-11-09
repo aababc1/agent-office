@@ -115,6 +115,23 @@ curl -X POST https://agent-office.<계정>.workers.dev/ingest/events \
 
 키를 바꾸거나 폐기하려면 GCP 서비스 계정의 키 탭에서 삭제하고 새로 만들어 5번만 다시 한다.
 
+### 앱에서 올리기 — 두 경로 (2026-11-09)
+
+| | 공유 드라이브(Shared Drive) | 소유자 Google 계정 (개인 Gmail·내 드라이브) |
+|---|---|---|
+| 조건 | 폴더가 공유 드라이브 안, 서비스 계정이 **콘텐츠 관리자** 멤버 | 소유자가 자료실에서 **Google 계정 연결**(OAuth) → **자료실 폴더 만들기** |
+| 파일 소유·용량 | 공유 드라이브(조직) | 소유자 계정 (geminihg11: 5 TB) |
+| 참여자 | GitHub Read면 앱에서 올림 | 같음 — 참여자는 Google 로그인 불필요 |
+| 설정 | 없음 | GCP OAuth 클라이언트 1개 + Worker 변수 2개 (아래) |
+
+서비스 계정은 저장 용량이 0이라 내 드라이브 폴더에는 파일을 만들 수 없다(`403 Service Accounts do not have storage quota`) — 그래서 개인 드라이브면 소유자 계정 토큰으로 올린다. 권한 범위는 `drive.file`(앱이 만든 파일만 — 비민감이라 심사 없이 게시, refresh token 만료 없음)이므로 앱이 **자기가 만든 폴더** `<층> 자료실`에만 쓴다; 기존 폴더의 파일은 Drive에서 그 폴더로 옮기면 된다(옮기기 전까지 "이전 폴더"로 같이 보임). 목록은 여전히 서비스 계정이 읽는다(폴더를 만들 때 서비스 계정에 뷰어로 자동 공유).
+
+GCP(기존 `agent-office` 프로젝트, 소유자 Google 계정으로):
+1. API 및 서비스 → **OAuth 동의 화면**(또는 Google Auth Platform → 브랜딩/대상): 외부, 앱 이름 `Agent Office`, 지원 이메일 → 범위 `…/auth/drive.file`, `openid`, `…/auth/userinfo.email` → **대상 → 앱 게시**(프로덕션). 테스트 상태로 두면 refresh token이 7일마다 끊긴다.
+2. 사용자 인증 정보 → OAuth 클라이언트 ID → **웹 애플리케이션** `agent-office-web` → 승인된 JavaScript 원본 `https://agent-office.<계정>.workers.dev`, 승인된 리디렉션 URI `https://agent-office.<계정>.workers.dev/auth/google/callback`
+3. Cloudflare → Worker → Settings → Variables and Secrets: `GOOGLE_CLIENT_ID`(변수), `GOOGLE_CLIENT_SECRET`(Secret) → Deploy
+4. 앱 자료실(소유자로 로그인) → "Google 계정 연결" → 동의 → "📁 자료실 폴더 만들기" → ⬆ 파일 올리기 활성. 연결 해제는 같은 자리.
+
 **업로드 경로**(참여자 = data repo Read라도 가능): 브라우저가 Worker에서 업로드 세션을 받아 **Google에 직접** 올린다(`POST /api/projects/<층>/drive/upload` → session URI → 브라우저 PUT, 크기 제한 없음) → `…/drive/uploaded`로 확인·목록 갱신·"새 자료" 알림. 브라우저가 Google에 직접 못 보내는 환경이면 90 MB까지 Worker 경유(`?proxy=1`)로 자동 전환. 자료실에서 올릴 때 **주제**를 고른다 — 기존 회의 글(#n) 또는 새 주제(회의 글을 먼저 만들고) — 그러면 파일은 Drive의 하위 폴더 **`#n 제목`**(없으면 생성)에 들어가고, 그 회의 글에 폴더 링크 + 파일 목록 댓글이 달린다. 주제 없이 올리면 폴더 루트. 자료실 목록은 하위 폴더(= 주제)별로 묶이고 폴더 제목의 `회의 #n`이 그 글로 연결되며, 회의 글을 열면 "📁 이 주제의 자료"가 함께 보인다. 회의 작성창의 📎도 같은 주제 폴더에 올리고 링크를 본문에 넣는다.
 
 **Drive 멤버**: Drive는 Google 계정 이메일로만 권한을 안다(GitHub ID와 연결되지 않음). 소유자는 자료실의 **👤 멤버** 버튼에 이메일·역할(보기/댓글/편집)을 넣으면 Worker가 서비스 계정으로 폴더 권한을 준다(초대 메일 발송) — 서비스 계정이 그 공유 드라이브의 관리자(콘텐츠 관리자 이상)여야 한다. 공유 드라이브 멤버 관리 화면에서 직접 해도 같다.

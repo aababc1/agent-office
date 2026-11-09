@@ -8,6 +8,7 @@ import { ensureSchema } from "./schema.js";
 import { checkLostProbes, detectDocsEvents, pushApi } from "./push.js";
 import { getSession, canRead } from "./auth.js";
 import { driveListing } from "./gdrive.js";
+import { googleCallback, googleLogin } from "./google.js";
 export { Floor } from "./floor.js";
 
 export default {
@@ -16,10 +17,11 @@ export default {
     const p = url.pathname;
     const m = request.method;
     try {
-      if (p.startsWith("/api/") || p.startsWith("/ingest/") || p.startsWith("/ws/")) await ensureSchema(env);   // once per isolate; idempotent
+      if (p.startsWith("/api/") || p.startsWith("/ingest/") || p.startsWith("/ws/") || p.startsWith("/auth/google")) await ensureSchema(env);   // once per isolate; idempotent
       if (p === "/auth/login") return login(request, env);
       if (p === "/auth/callback") return callback(request, env);
       if (p === "/auth/logout") return logout(request);
+      if (p === "/auth/google" || p === "/auth/google/callback") { const { session } = await getSession(request, env); if (!session) return json({ error: "sign in required", login: "/auth/login" }, 401); return p === "/auth/google" ? googleLogin(request, env, session) : googleCallback(request, env, session); }
       if (p === "/api/me") return me(request, env);
       if (p === "/api/floors") return floors(request, env);
       let x;
@@ -28,7 +30,7 @@ export default {
       if ((x = /^\/api\/projects\/([^/]+)\/plan$/.exec(p))) return plan(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/pipeline$/.exec(p))) return pipeline(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/docs$/.exec(p))) return docs(request, env, decodeURIComponent(x[1]));
-      if ((x = /^\/api\/projects\/([^/]+)\/drive\/(upload|uploaded|folder|member)$/.exec(p)) && m === "POST") return driveUpload(request, env, decodeURIComponent(x[1]), x[2]);
+      if ((x = /^\/api\/projects\/([^/]+)\/drive\/(upload|uploaded|folder|member|status|connect-folder|disconnect)$/.exec(p)) && m === "POST") return driveUpload(request, env, decodeURIComponent(x[1]), x[2]);
       if ((x = /^\/api\/projects\/([^/]+)\/notifications$/.exec(p))) return notifications(request, env, decodeURIComponent(x[1]));
       if ((x = /^\/api\/projects\/([^/]+)\/discussions$/.exec(p))) return discussions(request, env, decodeURIComponent(x[1]), null);
       if ((x = /^\/api\/projects\/([^/]+)\/discussions\/(\d+)\/comments$/.exec(p)) && m === "POST") return discussions(request, env, decodeURIComponent(x[1]), Number(x[2]));
