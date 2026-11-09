@@ -74,13 +74,14 @@ export async function listFolder(env, folderId, { depth = 1, max = 400 } = {}) {
 }
 
 const API = env => (env.GDRIVE_API_BASE || "https://www.googleapis.com").replace(/\/$/, "");
-const META = "id,name,mimeType,size,modifiedTime,webViewLink,parents";
+const META = "id,name,mimeType,size,modifiedTime,webViewLink,parents,driveId";
 
 /** Start a resumable upload into `folderId`; returns the session URI the browser PUTs the bytes to (no token needed on that URI). */
-export async function startUpload(env, folderId, { name, mime, size }) {
+// `origin` = the browser's Origin: Google answers CORS on the session URI only for the origin that opened the session
+export async function startUpload(env, folderId, { name, mime, size, origin }) {
   const token = await accessToken(env);
   const r = await fetch(`${API(env)}/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=${encodeURIComponent(META)}`, {
-    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": mime || "application/octet-stream", ...(size ? { "x-upload-content-length": String(size) } : {}) },
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": mime || "application/octet-stream", ...(size ? { "x-upload-content-length": String(size) } : {}), ...(origin ? { origin } : {}) },
     body: JSON.stringify({ name, parents: [folderId] }) });
   if (!r.ok) throw new Error(`drive upload start ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const uri = r.headers.get("location"); if (!uri) throw new Error("drive upload start: no session uri");

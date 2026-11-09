@@ -137,9 +137,9 @@ export async function driveUpload(request, env, name, step) {
     if (step === "upload") {
       if (!body.name) return withCookie(json({ error: "name missing" }, 400), g.setCookie);
       const tf = await topicFolder(body.topic);
-      return withCookie(json({ sessionUri: await startUpload(env, tf ? tf.id : fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0 }), folder: tf }), g.setCookie);
+      return withCookie(json({ sessionUri: await startUpload(env, tf ? tf.id : fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0, origin: request.headers.get("origin") || url.origin }), folder: tf }), g.setCookie);
     }
-    if (step === "folder") { const tf = await topicFolder(body.topic); return withCookie(json({ folder: tf }), g.setCookie); }
+    if (step === "folder") { const tf = await topicFolder(body.topic); const root = await fileMeta(env, fid); return withCookie(json({ folder: tf, root: { id: root.id, name: root.name, driveId: root.driveId || null, sharedDrive: !!root.driveId } }), g.setCookie); }
     if (!body.id) return withCookie(json({ error: "id missing" }, 400), g.setCookie);
     const file = await fileMeta(env, body.id); const parent = (file.parents || [])[0];
     const inside = parent === fid || (parent && ((await fileMeta(env, parent).catch(() => ({}))).parents || []).includes(fid));
