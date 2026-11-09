@@ -1278,7 +1278,7 @@ function renderDocs() {
   const dayAgo = Date.now() - 86400e3; const isNew = t => t && Date.parse(t) > dayAgo;
   // two places a file can live: the Drive folder (upload there — Drive has no deep link to its upload dialog, so the button opens the folder; drag a file in or 새로 만들기 → 파일 업로드)
   // and the data repo's docs/ (versioned; GitHub's upload page). Both show up in the list below and ring the "새 자료" bell.
-  let html = `<div class="row">${d.drive ? `<a class="btn drive" href="${esc(d.drive)}" target="_blank" rel="noopener" title="Drive 폴더 열기 — 여기에 올리면 목록에 뜹니다 (드래그 또는 새로 만들기 → 파일 업로드)">⬆ Drive에 올리기 / 폴더</a>` : ''}${d.uploadUrl ? `<a class="btn" href="${esc(d.uploadUrl)}" target="_blank" rel="noopener" title="data repo의 docs/ 폴더에 올리기 (GitHub, 버전 관리)">⬆ GitHub docs/에 올리기</a>` : ''}${d.folderUrl ? `<a class="btn" href="${esc(d.folderUrl)}" target="_blank" rel="noopener">GitHub docs/ 보기</a>` : ''}${d.drive && d.driveEnabled ? `<button class="btn" type="button" id="x-refresh" title="Drive 목록 다시 읽기">↻</button>` : ''}</div>`;
+  let html = `<div class="row">${d.drive && d.driveEnabled ? `<button class="btn on" type="button" id="x-up" title="이 층의 공유 드라이브 폴더에 올립니다 (참여자도 가능) — 올린 뒤 회의 글로 남길 수 있음">⬆ 파일 올리기</button><input type="file" id="x-file" multiple hidden>` : ''}${d.drive ? `<a class="btn drive" href="${esc(d.drive)}" target="_blank" rel="noopener" title="Drive 폴더 열기">📁 Drive 폴더</a>` : ''}${d.uploadUrl ? `<a class="btn" href="${esc(d.uploadUrl)}" target="_blank" rel="noopener" title="data repo의 docs/ 폴더에 올리기 (GitHub, 쓰기 권한 필요)">GitHub docs/</a>` : ''}${d.drive && d.driveEnabled ? `<button class="btn" type="button" id="x-refresh" title="Drive 목록 다시 읽기">↻</button>` : ''}</div>`;
   if ((d.links || []).length) html += `<div class="group">링크</div><ul class="dlist">${d.links.map(l => `<li><a class="xitem" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="xi">🔗</span><span class="xt">${esc(l.name || l.url)}</span><span class="xw">${esc(l.note || '')}</span></a></li>`).join('')}</ul>`;
   if (d.drive) {
     if (dfiles.length) html += `<div class="group">Drive · 최근 순${d.driveAt ? ` <span style="text-transform:none;letter-spacing:0">(${fmtRel(d.driveAt)} 기준)</span>` : ''}</div><ul class="dlist">${dfiles.map(f => `<li><a class="xitem ${isNew(f.modifiedAt) && !f.dir ? 'new' : ''}" href="${esc(f.url || d.drive)}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.path)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.modifiedAt ? fmtRel(f.modifiedAt) : ''}</span></span><span class="xw">${f.dir ? '폴더' : fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
@@ -1288,8 +1288,62 @@ function renderDocs() {
   }
   if (files.length) html += `<div class="group">GitHub docs/ · 최근 순</div><ul class="dlist">${files.map(f => `<li><a class="xitem ${isNew(f.updatedAt) ? 'new' : ''}" href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${fileIcon(f.name)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.updatedAt ? fmtRel(f.updatedAt) : ''}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>`;
   if (!files.length && !dfiles.length && !d.driveError) html += `<div class="note">아직 자료가 없습니다. ${d.drive ? 'Drive 폴더에 올리거나, ' : ''}data repo의 <code>docs/</code> 폴더에 올리면 여기에 보입니다${d.drive ? '' : ' (Drive 폴더는 repo의 <code>office.json</code>에 적으면 버튼이 생깁니다)'}.</div>`;
+  html += `<div id="x-upform" hidden></div>`;
   el.innerHTML = html;
   const rb = $('x-refresh'); if (rb) rb.onclick = () => { rb.disabled = true; loadDocs(true); };
+  const ub = $('x-up'); if (ub) { ub.onclick = () => $('x-file').click(); $('x-file').onchange = () => uploadForm([...$('x-file').files]); }
+}
+
+// ---- Drive 업로드: browser → (session from the Worker) → Google directly; small files fall back to the Worker proxy. Then optionally a 회의 post listing the files.
+async function driveUploadFile(file, onProgress) {
+  const base = `/api/projects/${encodeURIComponent(S.project)}/drive`;
+  const s = await wkFetch(`${base}/upload`, {method: 'POST', body: JSON.stringify({name: file.name, mime: file.type || 'application/octet-stream', size: file.size})});
+  try { const meta = await putWithProgress(s.sessionUri, file, onProgress); return (await wkFetch(`${base}/uploaded`, {method: 'POST', body: JSON.stringify({id: meta.id})})).file; }
+  catch (e) {
+    if (file.size > 90 * 1024 * 1024) throw new Error(`직접 업로드 실패(${e.message}) — 90 MB 이상은 서버 경유가 안 됩니다. Drive 폴더에 직접 올려 주세요`);
+    const r = await fetch(`${base}/upload?proxy=1`, {method: 'POST', credentials: 'same-origin', headers: {'content-type': file.type || 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name)}, body: file});
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `api ${r.status}`); return j.file;
+  }
+}
+function putWithProgress(uri, file, onProgress) {
+  return new Promise((res, rej) => { const x = new XMLHttpRequest(); x.open('PUT', uri); x.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    x.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    x.onload = () => { if (x.status >= 200 && x.status < 300) { try { res(JSON.parse(x.responseText)); } catch (e) { rej(new Error('응답 해석 실패')); } } else rej(new Error(`PUT ${x.status}`)); };
+    x.onerror = () => rej(new Error('network/CORS')); x.send(file); });
+}
+const fileLine = f => `- [${f.name}](${f.url})${f.size ? ` (${fmtSize(f.size)})` : ''}`;
+function uploadForm(files) {
+  const box = $('x-upform'); if (!box || !files.length) return; box.hidden = false;
+  box.innerHTML = `<div class="group">올릴 파일 ${files.length}개</div><ul class="dlist" id="x-ul">${files.map((f, i) => `<li class="xitem" data-i="${i}"><span class="xi">📄</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs" id="x-st${i}">대기</span></span><span class="xw">${fmtSize(f.size)}</span></li>`).join('')}</ul>
+    <label class="ck"><input type="checkbox" id="x-talk" checked> 올린 파일을 회의 글로 남기기</label><input type="text" id="x-note" placeholder="한 줄 설명 (선택)" style="width:100%;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:6px 0;background:var(--paper);color:var(--ink)">
+    <div class="row"><button class="btn on" type="button" id="x-go">올리기</button><button class="btn" type="button" id="x-cancel">취소</button><span class="note" id="x-msg"></span></div>`;
+  $('x-cancel').onclick = () => { box.hidden = true; box.innerHTML = ''; $('x-file').value = ''; };
+  $('x-go').onclick = async () => {
+    $('x-go').disabled = true; const done = [];
+    for (let i = 0; i < files.length; i++) { const st = $(`x-st${i}`); try { st.textContent = '0%'; const f = await driveUploadFile(files[i], p => { st.textContent = `${Math.round(p * 100)}%`; }); st.textContent = '완료'; done.push(f); } catch (e) { st.textContent = `실패: ${e.message}`; } }
+    $('x-msg').textContent = `${done.length}/${files.length} 올림`;
+    if (done.length && $('x-talk').checked) {
+      try { const note = $('x-note').value.trim(); const title = `📎 ${done.map(f => f.name).join(', ')}`.slice(0, 120);
+        const body = `${note ? note + '\n\n' : ''}${done.map(fileLine).join('\n')}\n\n_자료실(Drive)에 올림_` + contextFooter();
+        const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/discussions`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({title, body})});
+        const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); $('x-msg').textContent += ` · 회의 글 #${j.number}`; loadTalk(false); }
+      catch (e) { $('x-msg').textContent += ` · 회의 글 실패: ${e.message}`; }
+    }
+    $('x-file').value = ''; setTimeout(() => loadDocs(true), 800);
+  };
+}
+// 📎 in the composer: upload to Drive, then append markdown links to the textarea
+function attachButton(taId, msgId) {
+  return `<button class="btn" type="button" data-attach="${taId}" data-msg="${msgId}" title="Drive에 올리고 링크를 본문에 넣습니다">📎 파일 첨부</button><input type="file" multiple hidden data-attach-input="${taId}">`;
+}
+function bindAttach(root) {
+  root.querySelectorAll('button[data-attach]').forEach(b => { const inp = root.querySelector(`input[data-attach-input="${b.dataset.attach}"]`); const ta = $(b.dataset.attach); const msg = $(b.dataset.msg);
+    b.onclick = () => inp.click();
+    inp.onchange = async () => { const files = [...inp.files]; if (!files.length) return; b.disabled = true; const lines = [];
+      for (const f of files) { try { msg.textContent = `${f.name} 올리는 중…`; const r = await driveUploadFile(f, p => { msg.textContent = `${f.name} ${Math.round(p * 100)}%`; }); lines.push(fileLine(r)); } catch (e) { msg.textContent = `${f.name} 실패: ${e.message}`; } }
+      if (lines.length) { ta.value = (ta.value ? ta.value.replace(/\s*$/, '') + '\n\n' : '') + lines.join('\n') + '\n'; msg.textContent = `${lines.length}개 첨부됨`; }
+      b.disabled = false; inp.value = ''; };
+  });
 }
 
 // ================================================================ 회의 · 토론 (GitHub Discussions behind /api)
@@ -1316,7 +1370,8 @@ function renderTalk() {
     el.innerHTML = `<input type="text" id="d-title" placeholder="제목"><textarea id="d-body" placeholder="내용 (마크다운)"></textarea>
       ${T.categories.length ? `<select class="btn" id="d-cat">${T.categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
       <label class="ck"><input type="checkbox" id="d-ctx" checked> 지금 보는 세션 링크 첨부</label>
-      <div class="row"><button class="btn on" type="button" id="d-send">올리기</button><button class="btn" type="button" id="d-cancel">취소</button><span class="note" id="d-msg"></span></div>`;
+      <div class="row"><button class="btn on" type="button" id="d-send">올리기</button>${X.data && X.data.drive && X.data.driveEnabled ? attachButton('d-body', 'd-msg') : ''}<button class="btn" type="button" id="d-cancel">취소</button><span class="note" id="d-msg"></span></div>`;
+    bindAttach(el);
     $('d-cancel').onclick = () => { T.mode = 'list'; renderTalk(); };
     $('d-send').onclick = async () => { const title = $('d-title').value.trim(), body = $('d-body').value.trim(); if (!title || !body) { $('d-msg').textContent = '제목과 내용이 필요합니다'; return; }
       $('d-send').disabled = true; $('d-msg').textContent = '올리는 중…';
@@ -1335,7 +1390,8 @@ function renderTalk() {
       ${(d.comments || []).map(x => c(x, '') + (x.replies || []).map(r => c(r, 'reply')).join('')).join('')}
       <textarea id="c-body" placeholder="댓글 (마크다운)"></textarea>
       <label class="ck"><input type="checkbox" id="c-ctx"> 지금 보는 세션 링크 첨부</label>
-      <div class="row"><button class="btn on" type="button" id="c-send">댓글 달기</button><span class="note" id="c-msg"></span></div>`;
+      <div class="row"><button class="btn on" type="button" id="c-send">댓글 달기</button>${X.data && X.data.drive && X.data.driveEnabled ? attachButton('c-body', 'c-msg') : ''}<span class="note" id="c-msg"></span></div>`;
+    bindAttach(el);
     $('d-back').onclick = () => { T.mode = 'list'; T.open = null; renderTalk(); };
     $('c-send').onclick = async () => { const body = $('c-body').value.trim(); if (!body) return; $('c-send').disabled = true; $('c-msg').textContent = '…';
       try { const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/discussions/${d.number}/comments`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin',
@@ -1501,7 +1557,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-09.4';
+const OFFICE_BUILD = '2026-11-09.5';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
   navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});

@@ -5,7 +5,8 @@
 import { importPem } from "./github.js";
 import { b64url, b64urlText } from "./util.js";
 
-const SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+// read for the listing, write for uploads into the Shared Drive folder (the service account must be a member of that Shared Drive, Contributor or above)
+const SCOPE = "https://www.googleapis.com/auth/drive";
 let cached = null;   // {token, exp} per isolate
 
 export const driveEnabled = (env) => !!env.GDRIVE_SA_KEY;
@@ -70,6 +71,35 @@ export async function listFolder(env, folderId, { depth = 1, max = 400 } = {}) {
   await walk(folderId, "", 0);
   out.sort((a, b) => (b.modifiedAt || "").localeCompare(a.modifiedAt || ""));
   return out;
+}
+
+const API = env => (env.GDRIVE_API_BASE || "https://www.googleapis.com").replace(/\/$/, "");
+const META = "id,name,mimeType,size,modifiedTime,webViewLink,parents";
+
+/** Start a resumable upload into `folderId`; returns the session URI the browser PUTs the bytes to (no token needed on that URI). */
+export async function startUpload(env, folderId, { name, mime, size }) {
+  const token = await accessToken(env);
+  const r = await fetch(`${API(env)}/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=${encodeURIComponent(META)}`, {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": mime || "application/octet-stream", ...(size ? { "x-upload-content-length": String(size) } : {}) },
+    body: JSON.stringify({ name, parents: [folderId] }) });
+  if (!r.ok) throw new Error(`drive upload start ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const uri = r.headers.get("location"); if (!uri) throw new Error("drive upload start: no session uri");
+  return uri;
+}
+/** Small files through the Worker (browser → Worker → Drive, one multipart request). */
+export async function uploadSmall(env, folderId, { name, mime }, bytes) {
+  const token = await accessToken(env); const boundary = "office" + crypto.randomUUID().replace(/-/g, "");
+  const enc = new TextEncoder(); const head = enc.encode(`--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [folderId] })}\r\n--${boundary}\r\ncontent-type: ${mime || "application/octet-stream"}\r\n\r\n`);
+  const tail = enc.encode(`\r\n--${boundary}--`); const body = new Uint8Array(head.length + bytes.byteLength + tail.length); body.set(head, 0); body.set(new Uint8Array(bytes), head.length); body.set(tail, head.length + bytes.byteLength);
+  const r = await fetch(`${API(env)}/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${encodeURIComponent(META)}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": `multipart/related; boundary=${boundary}` }, body });
+  if (!r.ok) throw new Error(`drive upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+export async function fileMeta(env, id) {
+  const token = await accessToken(env);
+  const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=${encodeURIComponent(META)}`, { headers: { authorization: `Bearer ${token}` } });
+  if (!r.ok) throw new Error(`drive file ${r.status}`);
+  return r.json();
 }
 
 /** Cached listing in projects.drive_json; refreshed when older than `maxAgeMs` (or forced). Errors keep the last good list. */

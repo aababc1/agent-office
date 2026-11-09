@@ -1,6 +1,7 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, memberRole, unauthorized } from "./auth.js";
-import { driveEnabled, driveListing } from "./gdrive.js";
+import { driveEnabled, driveListing, fileMeta, folderIdOf, startUpload, uploadSmall } from "./gdrive.js";
+import { detectDocsEvents } from "./push.js";
 import { recentNotifications } from "./push.js";
 import { json, timingSafeEqual } from "./util.js";
 import * as disc from "./discussions.js";
@@ -104,6 +105,38 @@ function docsBadge(r, gh) {
   try { const d = r.drive_json ? JSON.parse(r.drive_json) : null; if (d && Array.isArray(d.files)) { const files = d.files.filter(f => !f.dir); n += files.length; const m = files.map(f => f.modifiedAt || "").sort().pop(); if (m && (!at || m > at)) at = m; } } catch { /* bad json */ }
   return { docsAt: at, docsN: n, hasDrive };
 }
+
+// ---- 자료실 업로드: any collaborator (Read is enough) puts a file into the floor's Shared Drive folder through the service account.
+//   POST …/drive/upload   {name, mime, size}  → {sessionUri}: the browser PUTs the bytes straight to Google (any size, nothing passes through here)
+//   POST …/drive/upload?proxy=1  (raw body, x-file-name / content-type headers, ≤ 90 MB) → {file}: fallback when the browser cannot reach the session URI
+//   POST …/drive/uploaded {id} → {file}: confirms the file landed in the folder, refreshes the listing, rings "새 자료"
+export async function driveUpload(request, env, name, step) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  if (!driveEnabled(env)) return withCookie(json({ error: "Drive 업로드가 꺼져 있습니다 (GDRIVE_SA_KEY 없음)" }, 503), g.setCookie);
+  const row = await env.DB.prepare("SELECT docs_json FROM projects WHERE name=?").bind(name).first();
+  let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
+  const fid = folderIdOf(cfg.drive); if (!fid) return withCookie(json({ error: "이 층에 Drive 폴더가 설정되지 않았습니다 (office.json drive)" }, 400), g.setCookie);
+  const url = new URL(request.url);
+  try {
+    if (step === "upload" && url.searchParams.has("proxy")) {
+      const fname = decodeURIComponent(request.headers.get("x-file-name") || "upload.bin"); const len = Number(request.headers.get("content-length") || 0);
+      if (len > 90 * 1024 * 1024) return withCookie(json({ error: "90 MB까지만 서버 경유 업로드가 됩니다" }, 413), g.setCookie);
+      const file = await uploadSmall(env, fid, { name: fname, mime: request.headers.get("content-type") }, await request.arrayBuffer());
+      await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file) }), g.setCookie);
+    }
+    const body = await request.json().catch(() => ({}));
+    if (step === "upload") {
+      if (!body.name) return withCookie(json({ error: "name missing" }, 400), g.setCookie);
+      return withCookie(json({ sessionUri: await startUpload(env, fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0 }) }), g.setCookie);
+    }
+    if (!body.id) return withCookie(json({ error: "id missing" }, 400), g.setCookie);
+    const file = await fileMeta(env, body.id);
+    if (!(file.parents || []).includes(fid)) return withCookie(json({ error: "그 파일은 이 층의 폴더에 없습니다" }, 400), g.setCookie);
+    await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file) }), g.setCookie);
+  } catch (e) { return withCookie(json({ error: e.message }, 502), g.setCookie); }
+}
+const slim = f => ({ id: f.id, name: f.name, mime: f.mimeType, size: f.size ? Number(f.size) : null, modifiedAt: f.modifiedTime, url: f.webViewLink || `https://drive.google.com/open?id=${f.id}` });
+async function afterUpload(env, name, driveUrl) { const d = await driveListing(env, name, driveUrl, { force: true }); if (!d.error) await detectDocsEvents(env, name, d.files, "drive"); }
 
 // ---- 자료실: docs/** of the data repo (tracked from pushes) + a Drive folder (service-account listing) / pinned links from office.json or plan.docs
 export async function docs(request, env, name) {
