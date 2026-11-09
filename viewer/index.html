@@ -42,6 +42,7 @@
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+.card.flash{animation:cardflash 1.8s ease-out}@keyframes cardflash{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
 html,body{height:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.45;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
@@ -1236,7 +1237,7 @@ function renderPipeline() {
     const hue = str => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
     html += `<div class="lvl"><div class="fl">3F 관제실 · 서고 · 갤러리</div><div class="civ">
       <div class="cv" data-go="talk"><div class="h">💬 관제실 · 회의<span class="bd">${newD ? `새 글 ${newD}` : (dl.length ? `${dl.length}개` : '')}</span></div><div class="scr">${dl.length ? dl.slice(0, 2).map((d, k) => `<div class="${k ? 's' : 't'}">${esc(d.title)}${k === 0 && d.author ? ` <span style="opacity:.6;font-weight:400">· ${esc(d.author.login)} · ${fmtRel(d.updatedAt)}</span>` : ''}</div>`).join('') : '<div class="s">아직 글이 없습니다 — "새 글"로 시작</div>'}</div></div>
-      <div class="cv" data-go="docs"><div class="h">📎 서고 · 자료<span class="bd">${newF ? `새 자료 ${newF}` : (allFiles.length ? `${allFiles.length}개` : '')}</span></div><div class="shelf">${allFiles.slice(0, 14).map(f => `<i style="height:${18 + (hue(f.name) % 24)}px;background:hsl(${hue(f.name)} 45% 55%)" title="${esc(f.name)}"></i>`).join('') || '<i style="height:6px;background:var(--line)"></i>'}</div><div class="sub">${allFiles[0] ? `${esc(allFiles[0].name)} · ${fmtRel(allFiles[0].at)}` : (X2.drive ? 'Drive 폴더 연결됨' : '자료 없음')}</div></div>
+      <div class="cv" data-go="docs"><div class="h">📎 서고 · 자료<span class="bd">${newF ? `새 자료 ${newF}` : (allFiles.length ? `${allFiles.length}개` : '')}</span></div><div class="shelf">${allFiles.slice(0, 14).map(f => `<i style="height:${18 + (hue(f.name) % 24)}px;background:hsl(${hue(f.name)} 45% 55%)${f.url ? ';cursor:pointer' : ''}" title="${esc(f.name)}${f.url ? ' — 열기' : ''}"${f.url ? ` data-url="${esc(f.url)}"` : ''}></i>`).join('') || '<i style="height:6px;background:var(--line)"></i>'}</div><div class="sub">${allFiles[0] ? `${esc(allFiles[0].name)} · ${fmtRel(allFiles[0].at)}` : (X2.drive ? 'Drive 폴더 연결됨' : '자료 없음')}</div></div>
       <div class="cv" data-go="docs"><div class="h">🖼 갤러리<span class="bd">${pics.length ? `${pics.length}장` : ''}</span></div><div class="frames">${pics.map(f => `<a href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.name)}"><i style="background:linear-gradient(135deg,hsl(${hue(f.name)} 50% 70%),hsl(${(hue(f.name) + 40) % 360} 50% 45%))"></i></a>`).join('') || '<a><i style="background:var(--paper)"></i></a>'}</div><div class="sub">${pics[0] ? esc(pics[0].name) : '그림·PDF가 올라오면 액자에 걸립니다'}</div></div></div></div>`;
   }
   const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
@@ -1248,7 +1249,10 @@ function renderPipeline() {
   const b3b = $('pp-3d'); if (b3b) b3b.onclick = () => { V3.want = !view3d(); try { localStorage.setItem('office.view3d', V3.want ? '1' : '0'); } catch (e) { /* no storage */ } renderPipeline(); };
   el.querySelectorAll('.mc').forEach(g => { const go = () => { const box = $('sdetail'); if (PV.sel === g.dataset.n && box) box.classList.toggle('open'); else if (box) box.classList.add('open'); PV.sel = g.dataset.n; el.querySelectorAll('.mc').forEach(x => x.classList.toggle('sel', x === g)); detail(); }; g.onclick = go; g.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } }; });
   const cbh = $('cbh'); if (cbh) cbh.onclick = () => { const b = $('cb'); b.classList.toggle('open'); cbh.querySelector('.tg').textContent = b.classList.contains('open') ? '▾' : '▸ 펼치기'; };
-  el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && getComputedStyle(b).display !== 'none') b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) card.scrollIntoView({behavior: 'smooth', block: 'start'}); } }; });
+  // 3F shortcuts: a shelf bar opens that file; the card itself goes to the 자료/회의 card — the phone tab when the tab bar is on screen,
+  // otherwise scroll the desktop card into view and flash it (the tab buttons report display:inline-block even inside a hidden bar, so test geometry)
+  el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const bar = ev.target.closest('i[data-url]'); if (bar) { window.open(bar.dataset.url, '_blank', 'noopener'); return; }
+    const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && b.getClientRects().length) b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) { card.scrollIntoView({behavior: 'smooth', block: 'start'}); card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1800); } } }; });
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }
 
@@ -1495,7 +1499,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-09.2';
+const OFFICE_BUILD = '2026-11-09.3';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
   navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
