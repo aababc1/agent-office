@@ -1491,7 +1491,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-08.1';
+const OFFICE_BUILD = '2026-11-09.1';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
   navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
