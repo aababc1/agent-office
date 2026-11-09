@@ -29,7 +29,7 @@ GitHub → Settings → Developer settings → GitHub Apps → New GitHub App
 | **Webhook** → Active | ✅ URL `https://agent-office.<계정>.workers.dev/ingest/github`, Secret = 임의 문자열(=`GH_WEBHOOK_SECRET`) |
 | Repository permissions | **Contents: Read-only**, **Discussions: Read and write**, Metadata: Read-only(자동) |
 | Subscribe to events | **Push**, **Discussion**, **Discussion comment** |
-| Where can this app be installed? | Only on this account |
+| Where can this app be installed? | **Any account** — "Only on this account"(비공개 앱)이면 다른 GitHub 계정은 로그인(authorize) 단계에서 GitHub가 **404**를 돌려준다(2026-11-09 확인). 설치 자체는 여전히 내 계정의 data repo에만 하면 된다 |
 
 만든 뒤 적어둘 것: **App ID**, **Client ID**, **Client secret**(Generate), **Private key**(Generate → `.pem` 다운로드). pem은 PKCS#1 형식(`BEGIN RSA PRIVATE KEY`)이어도 Worker가 그대로 받는다.
 
@@ -71,6 +71,7 @@ Workers & Pages → Create → **Import a repository** → `aababc1/agent-office
 
 1. `https://…workers.dev/api/health` → `{"ok":true}`
 2. 뷰어 열기 → "GitHub로 로그인" → App 승인 → 본인이 collaborator인 층이 보임
+   - 다른 사람을 들이는 순서: ① App이 "Any account"인지(아니면 그 사람은 로그인에서 404) ② data repo → Settings → Collaborators → **Read**로 초대, 상대가 수락 ③ 상대가 뷰어에서 로그인. collaborator 판정은 10분 캐시.
 3. data repo에 push가 일어나면 수 초 안에 사무실이 움직임 (GitHub App → Recent Deliveries에서 웹훅 응답 `200` 확인 가능)
 4. 다른 계정으로 로그인하면 collaborator가 아닌 층은 🔒
 
