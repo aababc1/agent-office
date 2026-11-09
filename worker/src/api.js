@@ -1,5 +1,5 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
-import { canRead, getSession, unauthorized } from "./auth.js";
+import { canRead, getSession, memberRole, unauthorized } from "./auth.js";
 import { driveEnabled, driveListing } from "./gdrive.js";
 import { recentNotifications } from "./push.js";
 import { json, timingSafeEqual } from "./util.js";
@@ -40,11 +40,11 @@ export async function floors(request, env) {
   const docsAt = {}; for (const d of (await env.DB.prepare("SELECT project, MAX(updated_at) AS at, COUNT(*) AS n FROM docs GROUP BY project").all()).results || []) docsAt[d.project] = { at: d.at, n: d.n };
   const out = [];
   for (const r of rows) {
-    const ok = await canRead(env, session, r.repo);
-    if (!ok) { out.push({ name: r.name, locked: true }); continue; }
+    const role = await memberRole(env, session, r.repo);
+    if (!role) { out.push({ name: r.name, locked: true }); continue; }
     const s = r.summary_json ? JSON.parse(r.summary_json) : {};
     const pipe = await mergedPipeline(env, r.name);
-    out.push({ name: r.name, repo: r.repo, description: r.description, lastAt: r.last_at || (pipe && pipe.lastAt) || null, emitterAt: r.emitter_at || (pipe && pipe.probedAt) || null,
+    out.push({ name: r.name, repo: r.repo, role, description: r.description, lastAt: r.last_at || (pipe && pipe.lastAt) || null, emitterAt: r.emitter_at || (pipe && pipe.probedAt) || null,
                sessions: (s.sessions || {}).total || 0, active: (s.sessions || {}).active || 0,
                latest: (s.sessions || {}).latest || null, alerts: s.alerts || [], progress: s.progress || null, pipeline: pipe ? { run: pipe.run, status: pipe.status, lastAt: pipe.lastAt, done: pipe.done, total: pipe.total, ratio: pipe.ratio, running: pipe.running, failed: pipe.failed, etaHours: pipe.etaHours, sites: pipe.sites } : (s.pipeline || null),
                discussionAt: r.discussion_at || null, discussionLast: r.discussion_last ? JSON.parse(r.discussion_last) : null, hasPlan: !!r.has_plan,

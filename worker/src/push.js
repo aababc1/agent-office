@@ -5,6 +5,10 @@
 import { b64url, b64urlDecode, b64urlText, json, nowIso } from "./util.js";
 
 export const KINDS = ["cohort_done", "stage_done", "job_failed", "probe_lost", "milestone_late", "node_free", "idle_nodes", "discussion", "docs"];
+/** Pipeline alarms (failures, nodes, probe, milestones) are the owner's business; a participant (Read on the data repo) gets the team kinds only. */
+export const OPS_KINDS = ["cohort_done", "stage_done", "job_failed", "probe_lost", "milestone_late", "node_free", "idle_nodes"];
+export const TEAM_KINDS = ["discussion", "docs"];
+export const kindsForRole = role => (role === "admin" || role === "write") ? KINDS : TEAM_KINDS;
 export const KIND_KO = { cohort_done: "코호트 완료", stage_done: "단계 완료", job_failed: "실패 발생", probe_lost: "프로브 끊김", milestone_late: "마일스톤 지연", node_free: "노드 비었음", idle_nodes: "노드 놀고 있음", discussion: "회의 새 글", docs: "새 자료" };
 const enc = new TextEncoder();
 
@@ -73,8 +77,8 @@ export async function subscribe(env, login, sub, ua) {
 export async function unsubscribe(env, login, endpoint) {
   await env.DB.prepare("DELETE FROM push_subs WHERE login=? AND endpoint=?").bind(login, endpoint).run();
 }
-export async function setPrefs(env, login, project, kinds) {
-  const k = (kinds || []).filter(x => KINDS.includes(x));
+export async function setPrefs(env, login, project, kinds, role) {
+  const allowed = kindsForRole(role || "read"); const k = (kinds || []).filter(x => allowed.includes(x));
   if (!k.length) { await env.DB.prepare("DELETE FROM push_prefs WHERE login=? AND project=?").bind(login, project).run(); return []; }
   await env.DB.prepare("INSERT INTO push_prefs(login, project, kinds_json, updated_at) VALUES(?,?,?,?) ON CONFLICT(login, project) DO UPDATE SET kinds_json=excluded.kinds_json, updated_at=excluded.updated_at")
     .bind(login, project, JSON.stringify(k), nowIso()).run();
@@ -95,8 +99,13 @@ export async function notify(env, project, kind, title, body, { url, skipLogin, 
     await env.DB.prepare("INSERT INTO notify_log(project, kind, title, body, sent, at) VALUES(?,?,?,?,0,?)").bind(project, kind, title, `(muted: ${recent} in 10 min) ${body}`, nowIso()).run();
     return 0;
   }
-  const rows = (await env.DB.prepare(`SELECT s.id, s.login, s.endpoint, s.p256dh, s.auth, s.fails FROM push_prefs p JOIN push_subs s ON s.login=p.login
+  let rows = (await env.DB.prepare(`SELECT s.id, s.login, s.endpoint, s.p256dh, s.auth, s.fails FROM push_prefs p JOIN push_subs s ON s.login=p.login
      WHERE p.project=? AND p.kinds_json LIKE ?`).bind(project, `%"${kind}"%`).all()).results || [];
+  if (OPS_KINDS.includes(kind) && rows.length) {   // pipeline alarms: owner + write-level collaborators of the data repo only
+    const pr = await env.DB.prepare("SELECT repo FROM projects WHERE name=?").bind(project).first(); const repo = pr && pr.repo; const owner = repo ? repo.split("/")[0] : null;
+    const ok = new Set(((await env.DB.prepare("SELECT login FROM members_cache WHERE repo=? AND ok=1 AND role IN ('admin','write')").bind(repo || "").all()).results || []).map(r => r.login));
+    rows = rows.filter(r => r.login === owner || ok.has(r.login));
+  }
   let sent = 0;
   for (const r of rows) {
     if (skipLogin && r.login === skipLogin) continue;
@@ -216,8 +225,8 @@ export async function recentNotifications(env, project, limit = 30) {
 }
 
 // ---- HTTP handlers (login required; the floor must be readable by the person) ---------------------------------------
-export async function pushApi(request, env, path, session, canReadProject) {
-  if (path === "/api/push/key") return json({ key: (await vapid(env)).publicKey, kinds: KINDS, ko: KIND_KO });
+export async function pushApi(request, env, path, session, roleOf) {   // roleOf(project) → admin | write | read | null
+  if (path === "/api/push/key") return json({ key: (await vapid(env)).publicKey, kinds: KINDS, ko: KIND_KO, ops: OPS_KINDS, team: TEAM_KINDS });
   if (path === "/api/push/prefs") return json(await getPrefs(env, session.login));
   if (request.method !== "POST") return json({ error: "method" }, 405);
   const body = await request.json().catch(() => ({}));
@@ -225,13 +234,13 @@ export async function pushApi(request, env, path, session, canReadProject) {
     if (!body.subscription || !body.subscription.endpoint || !body.subscription.keys) return json({ error: "subscription missing" }, 400);
     await subscribe(env, session.login, body.subscription, request.headers.get("user-agent"));
     let kinds = null;
-    if (body.project) { if (!(await canReadProject(body.project))) return json({ error: "not a collaborator" }, 403); kinds = await setPrefs(env, session.login, body.project, body.kinds || KINDS); }
+    if (body.project) { const role = await roleOf(body.project); if (!role) return json({ error: "not a collaborator" }, 403); kinds = await setPrefs(env, session.login, body.project, body.kinds || kindsForRole(role), role); }
     return json({ ok: true, kinds });
   }
   if (path === "/api/push/prefs/set") {
     if (!body.project) return json({ error: "project missing" }, 400);
-    if (!(await canReadProject(body.project))) return json({ error: "not a collaborator" }, 403);
-    return json({ ok: true, kinds: await setPrefs(env, session.login, body.project, body.kinds || []) });
+    const role = await roleOf(body.project); if (!role) return json({ error: "not a collaborator" }, 403);
+    return json({ ok: true, kinds: await setPrefs(env, session.login, body.project, body.kinds || [], role) });
   }
   if (path === "/api/push/unsubscribe") { if (body.endpoint) await unsubscribe(env, session.login, body.endpoint); return json({ ok: true }); }
   if (path === "/api/push/test") {

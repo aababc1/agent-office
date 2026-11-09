@@ -9,6 +9,7 @@ const STEPS = [
   `ALTER TABLE projects ADD COLUMN drive_json TEXT`,
   `ALTER TABLE projects ADD COLUMN discussion_at TEXT`,
   `ALTER TABLE projects ADD COLUMN discussion_last TEXT`,
+  `ALTER TABLE members_cache ADD COLUMN role TEXT`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS push_subs (id TEXT PRIMARY KEY, login TEXT NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, ua TEXT, created_at TEXT, last_ok TEXT, fails INTEGER DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS push_subs_login ON push_subs(login)`,

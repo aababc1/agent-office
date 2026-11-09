@@ -1007,12 +1007,16 @@ async function ensureSubscribed() {
   return sub.toJSON();
 }
 async function openKinds(project) {
-  if (!PN.kinds.length) { try { const k = await wkFetch('/api/push/key'); PN.key = k.key; PN.kinds = k.kinds; PN.ko = k.ko; } catch (e) { PN.kinds = DEFAULT_KINDS; } }
+  if (!PN.kinds.length) { try { const k = await wkFetch('/api/push/key'); PN.key = k.key; PN.kinds = k.kinds; PN.ko = k.ko; PN.team = k.team || ['discussion', 'docs']; } catch (e) { PN.kinds = DEFAULT_KINDS; PN.team = ['discussion', 'docs']; } }
+  // what this person may receive: owner / write-level collaborators get the pipeline alarms too; a Read participant gets 회의·자료 only (the Worker enforces the same)
+  const proj = ((S.index && S.index.projects) || []).find(x => (x.key || x.name) === project); const role = (proj && proj.role) || 'read'; const ops = role === 'admin' || role === 'write';
+  const kinds = ops ? PN.kinds : PN.kinds.filter(k => (PN.team || []).includes(k));
   const cur = PN.prefs[project] || []; const on = cur.length > 0;
   let box = $('kinds'); if (box) box.remove();
   box = document.createElement('div'); box.className = 'kinds'; box.id = 'kinds';
   box.innerHTML = `<div class="kh">🔔 ${esc(project)} 알림<span class="x" id="kx">✕</span></div>
-    ${PN.kinds.map(k => `<label><input type="checkbox" data-k="${k}" ${(on ? cur : DEFAULT_KINDS).includes(k) ? 'checked' : ''}> ${esc(PN.ko[k] || k)}</label>`).join('')}
+    <div class="note">${ops ? '소유자/쓰기 권한: 공정 알림(실패·노드·마일스톤) + 회의·자료' : '참여자: 회의 새 글·새 자료만 (공정 알림은 소유자에게)'}</div>
+    ${kinds.map(k => `<label><input type="checkbox" data-k="${k}" ${(on ? cur : DEFAULT_KINDS).includes(k) ? 'checked' : ''}> ${esc(PN.ko[k] || k)}</label>`).join('')}
     <div class="row"><button class="btn on" type="button" id="ksave">${on ? '저장' : '이 폰에서 켜기'}</button>${on ? '<button class="btn" type="button" id="koff">끄기</button>' : ''}<button class="btn" type="button" id="ktest" title="이 계정의 기기 전체로 시험 알림">시험</button></div>
     <div class="note" id="kmsg">${PN.devices ? `등록된 기기 ${PN.devices}대` : '아직 등록된 기기가 없습니다'}</div>`;
   const anchor = $('floors').querySelector(`.floor[data-p="${CSS.escape(project)}"]`); (anchor || $('floors')).insertAdjacentElement('afterend', box);
@@ -1491,7 +1495,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-09.1';
+const OFFICE_BUILD = '2026-11-09.2';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
   navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});

@@ -1,5 +1,5 @@
 // Agent Office Worker: serves the viewer (static assets), GitHub login, read API, WebSocket, ingest.
-import { callback, login, logout } from "./auth.js";
+import { callback, login, logout, memberRole } from "./auth.js";
 import { discussions, docs, floors, me, notifications, pipeline, plan, project, sessionData, ws } from "./api.js";
 import { direct, webhook } from "./ingest.js";
 import { json } from "./util.js";
@@ -37,7 +37,7 @@ export default {
       if (p === "/ingest/events" && m === "POST") return direct(request, env);
       if (p.startsWith("/api/push/")) {
         const { session } = await getSession(request, env); if (!session) return json({ error: "sign in required", login: "/auth/login" }, 401);
-        return pushApi(request, env, p, session, async (name) => { const r = await env.DB.prepare("SELECT repo FROM projects WHERE name=?").bind(name).first(); return !!r && await canRead(env, session, r.repo); });
+        return pushApi(request, env, p, session, async (name) => { const r = await env.DB.prepare("SELECT repo FROM projects WHERE name=?").bind(name).first(); return r ? await memberRole(env, session, r.repo) : null; });
       }
       if (p === "/api/admin/diag") return diag(request, env);
       if (p === "/api/admin/resync") return resync(request, env);

@@ -63,9 +63,13 @@ export async function rawFile(env, repo, path, ref) {
 }
 
 // A person's own token: can they read this repo? (private repo → collaborator or owner)
-export async function userCanRead(userToken, repo) {
+export async function userCanRead(userToken, repo) { return !!(await userRepoRole(userToken, repo)); }
+/** "admin" (owner/admin) · "write" (maintain/push) · "read" (triage/pull) · null (no access), from the permissions GitHub reports for this token. */
+export async function userRepoRole(userToken, repo) {
   const r = await fetch(`https://api.github.com/repos/${repo}`, { headers: { authorization: `Bearer ${userToken}`, accept: "application/vnd.github+json", "user-agent": UA, "x-github-api-version": "2022-11-28" } });
-  return r.ok;
+  if (!r.ok) return null;
+  const perms = ((await r.json().catch(() => ({}))).permissions) || {};
+  return perms.admin ? "admin" : (perms.maintain || perms.push) ? "write" : "read";
 }
 export async function userProfile(userToken) {
   const r = await fetch("https://api.github.com/user", { headers: { authorization: `Bearer ${userToken}`, accept: "application/vnd.github+json", "user-agent": UA, "x-github-api-version": "2022-11-28" } });

@@ -1,7 +1,7 @@
 // GitHub login for viewers. The person's GitHub token never reaches the browser: it lives inside an
 // HttpOnly signed cookie and is only used server-side to answer "can this person read repo X?".
 import { cookie, json, randomHex, readCookie, signJwt, text, verifyJwt } from "./util.js";
-import { userCanRead, userProfile } from "./github.js";
+import { userRepoRole, userProfile } from "./github.js";
 
 const COOKIE = "office";
 const STATE = "office_state";
@@ -70,15 +70,18 @@ export async function getSession(request, env) {
 
 export const unauthorized = () => json({ error: "sign in required", login: "/auth/login" }, 401);
 
-/** Membership = "GitHub lets this person read the data repo". Cached 10 minutes per (repo, login). */
-export async function canRead(env, session, repo) {
-  if (env.DEV_ALLOW_ALL === "1") return true;          // local `wrangler dev` only (.dev.vars); never set in production
-  if (!repo) return false;
-  const row = await env.DB.prepare("SELECT ok, checked_at FROM members_cache WHERE repo=? AND login=?").bind(repo, session.login).first();
+/** Membership = "GitHub lets this person read the data repo". Cached 10 minutes per (repo, login), with the role
+ *  (admin / write / read) GitHub reports — the role decides which push kinds a person may receive (push.js). */
+export async function canRead(env, session, repo) { return !!(await memberRole(env, session, repo)); }
+export async function memberRole(env, session, repo) {
+  if (env.DEV_ALLOW_ALL === "1") return "admin";        // local `wrangler dev` only (.dev.vars); never set in production
+  if (!repo || !session) return null;
+  if (repo.split("/")[0] === session.login) return "admin";   // the repo's owner, whatever the cache says
+  const row = await env.DB.prepare("SELECT ok, role, checked_at FROM members_cache WHERE repo=? AND login=?").bind(repo, session.login).first();
   const now = Date.now();
-  if (row && now - row.checked_at < 10 * 60e3) return !!row.ok;
-  const ok = await userCanRead(session.gh, repo);
-  await env.DB.prepare("INSERT INTO members_cache(repo, login, ok, checked_at) VALUES(?,?,?,?) ON CONFLICT(repo, login) DO UPDATE SET ok=excluded.ok, checked_at=excluded.checked_at")
-    .bind(repo, session.login, ok ? 1 : 0, now).run();
-  return ok;
+  if (row && row.role !== null && now - row.checked_at < 10 * 60e3) return row.ok ? row.role : null;
+  const role = session.gh ? await userRepoRole(session.gh, repo) : null;
+  await env.DB.prepare("INSERT INTO members_cache(repo, login, ok, role, checked_at) VALUES(?,?,?,?,?) ON CONFLICT(repo, login) DO UPDATE SET ok=excluded.ok, role=excluded.role, checked_at=excluded.checked_at")
+    .bind(repo, session.login, role ? 1 : 0, role || "none", now).run();
+  return role;
 }
