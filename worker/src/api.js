@@ -1,6 +1,6 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, memberRole, unauthorized } from "./auth.js";
-import { driveEnabled, driveListing, fileMeta, folderIdOf, startUpload, uploadSmall } from "./gdrive.js";
+import { addMember, driveEnabled, driveListing, ensureSubfolder, fileMeta, folderIdOf, startUpload, topicFolderName, uploadSmall } from "./gdrive.js";
 import { detectDocsEvents } from "./push.js";
 import { recentNotifications } from "./push.js";
 import { json, timingSafeEqual } from "./util.js";
@@ -117,21 +117,33 @@ export async function driveUpload(request, env, name, step) {
   let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
   const fid = folderIdOf(cfg.drive); if (!fid) return withCookie(json({ error: "이 층에 Drive 폴더가 설정되지 않았습니다 (office.json drive)" }, 400), g.setCookie);
   const url = new URL(request.url);
+  // a topic (discussion #n + title) gets its own sub-folder "#n 제목" under the floor folder; files of that topic go there
+  const topicFolder = async t => (t && (t.number || t.title)) ? ensureSubfolder(env, fid, topicFolderName(t.number, t.title)) : null;
   try {
+    if (step === "member") {   // owner only: give a Google account access to the floor folder (reader / commenter / writer)
+      if ((await memberRole(env, g.session, g.project.repo)) !== "admin") return withCookie(json({ error: "소유자만 멤버를 추가할 수 있습니다" }, 403), g.setCookie);
+      const body = await request.json().catch(() => ({})); const email = String(body.email || "").trim(); const role = ["reader", "commenter", "writer"].includes(body.role) ? body.role : "reader";
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return withCookie(json({ error: "이메일 형식이 아닙니다" }, 400), g.setCookie);
+      return withCookie(json({ ok: true, permission: await addMember(env, fid, email, role) }), g.setCookie);
+    }
     if (step === "upload" && url.searchParams.has("proxy")) {
       const fname = decodeURIComponent(request.headers.get("x-file-name") || "upload.bin"); const len = Number(request.headers.get("content-length") || 0);
       if (len > 90 * 1024 * 1024) return withCookie(json({ error: "90 MB까지만 서버 경유 업로드가 됩니다" }, 413), g.setCookie);
-      const file = await uploadSmall(env, fid, { name: fname, mime: request.headers.get("content-type") }, await request.arrayBuffer());
-      await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file) }), g.setCookie);
+      const tf = await topicFolder({ number: url.searchParams.get("topic_n"), title: url.searchParams.get("topic") });
+      const file = await uploadSmall(env, tf ? tf.id : fid, { name: fname, mime: request.headers.get("content-type") }, await request.arrayBuffer());
+      await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file), folder: tf }), g.setCookie);
     }
     const body = await request.json().catch(() => ({}));
     if (step === "upload") {
       if (!body.name) return withCookie(json({ error: "name missing" }, 400), g.setCookie);
-      return withCookie(json({ sessionUri: await startUpload(env, fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0 }) }), g.setCookie);
+      const tf = await topicFolder(body.topic);
+      return withCookie(json({ sessionUri: await startUpload(env, tf ? tf.id : fid, { name: String(body.name).slice(0, 200), mime: body.mime, size: Number(body.size) || 0 }), folder: tf }), g.setCookie);
     }
+    if (step === "folder") { const tf = await topicFolder(body.topic); return withCookie(json({ folder: tf }), g.setCookie); }
     if (!body.id) return withCookie(json({ error: "id missing" }, 400), g.setCookie);
-    const file = await fileMeta(env, body.id);
-    if (!(file.parents || []).includes(fid)) return withCookie(json({ error: "그 파일은 이 층의 폴더에 없습니다" }, 400), g.setCookie);
+    const file = await fileMeta(env, body.id); const parent = (file.parents || [])[0];
+    const inside = parent === fid || (parent && ((await fileMeta(env, parent).catch(() => ({}))).parents || []).includes(fid));
+    if (!inside) return withCookie(json({ error: "그 파일은 이 층의 폴더에 없습니다" }, 400), g.setCookie);
     await afterUpload(env, name, cfg.drive); return withCookie(json({ file: slim(file) }), g.setCookie);
   } catch (e) { return withCookie(json({ error: e.message }, 502), g.setCookie); }
 }

@@ -95,6 +95,27 @@ export async function uploadSmall(env, folderId, { name, mime }, bytes) {
   if (!r.ok) throw new Error(`drive upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.json();
 }
+/** Sub-folder `name` directly under `parentId` (a topic's folder); created when missing. */
+export async function ensureSubfolder(env, parentId, name) {
+  const token = await accessToken(env); const H = { authorization: `Bearer ${token}` };
+  const q = `'${parentId}' in parents and name = '${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const u = new URL(`${API(env)}/drive/v3/files`); u.searchParams.set("q", q); u.searchParams.set("fields", "files(id,name,webViewLink)"); u.searchParams.set("supportsAllDrives", "true"); u.searchParams.set("includeItemsFromAllDrives", "true"); u.searchParams.set("pageSize", "5");
+  const r = await fetch(u, { headers: H }); if (!r.ok) throw new Error(`drive folder lookup ${r.status}`);
+  const hit = ((await r.json()).files || [])[0]; if (hit) return { id: hit.id, name: hit.name, url: hit.webViewLink || `https://drive.google.com/drive/folders/${hit.id}`, created: false };
+  const c = await fetch(`${API(env)}/drive/v3/files?supportsAllDrives=true&fields=id,name,webViewLink`, { method: "POST", headers: { ...H, "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }) });
+  if (!c.ok) throw new Error(`drive folder create ${c.status}: ${(await c.text()).slice(0, 160)}`);
+  const f = await c.json(); return { id: f.id, name: f.name, url: f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`, created: true };
+}
+/** Give `email` access to the floor's folder (in a Shared Drive this is folder-level sharing; the service account needs Manager/Content manager rights). */
+export async function addMember(env, folderId, email, role) {
+  const token = await accessToken(env);
+  const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(folderId)}/permissions?supportsAllDrives=true&sendNotificationEmail=true&fields=id,role,emailAddress`, {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ type: "user", role, emailAddress: email }) });
+  if (!r.ok) throw new Error(`drive permission ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.json();
+}
+/** Folder name for a discussion topic: "#12 제목", filesystem-safe, ≤ 80 chars. */
+export const topicFolderName = (number, title) => `${number ? `#${number} ` : ""}${String(title || "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim()}`.slice(0, 80).trim() || (number ? `#${number}` : "주제");
 export async function fileMeta(env, id) {
   const token = await accessToken(env);
   const r = await fetch(`${API(env)}/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=${encodeURIComponent(META)}`, { headers: { authorization: `Bearer ${token}` } });
