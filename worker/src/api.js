@@ -1,6 +1,6 @@
 // Read API for the viewer. Every project read is gated by canRead(session, project.repo).
 import { canRead, getSession, memberRole, unauthorized } from "./auth.js";
-import { createAppFolder, driveEnabled, driveListing, ensureSubfolder, fileMeta, folderIdOf, listFolder, saEmail, share, startUpload, topicFolderName, uploadSmall } from "./gdrive.js";
+import { createAppFolder, driveEnabled, driveListing, ensureSubfolder, fileMeta, folderIdOf, listFolder, saEmail, saToken, share, startUpload, topicFolderName, uploadSmall } from "./gdrive.js";
 import { googleAccount, googleDisconnect, googleEnabled, ownerToken } from "./google.js";
 import { upsertDocsConfig } from "./ingest.js";
 import { detectDocsEvents } from "./push.js";
@@ -179,6 +179,35 @@ export async function driveUpload(request, env, name, step) {
     }
     return reply({ error: "unknown step" }, 404);
   } catch (e) { return reply({ error: e.message }, 502); }
+}
+// GET …/drive/file/<id>[?dl=1] — the file's bytes through the Worker (service account first, then the owner's token), so a
+// participant opens/downloads it with just the GitHub login: no Google account needed. Google Docs/Sheets/Slides come out as PDF.
+// Only files inside the floor's folders (app folder / office.json folder, one level of sub-folders) are served.
+export async function driveFile(request, env, name, id) {
+  const g = await gate(request, env, name); if (g.deny) return g.deny;
+  const row = await env.DB.prepare("SELECT docs_json FROM projects WHERE name=?").bind(name).first();
+  let cfg = {}; try { cfg = row && row.docs_json ? JSON.parse(row.docs_json) : {}; } catch { cfg = {}; }
+  const roots = new Set([cfg.appFolder && cfg.appFolder.id, folderIdOf(cfg.drive)].filter(Boolean)); if (!roots.size) return withCookie(json({ error: "no drive folder" }, 404), g.setCookie);
+  const dl = new URL(request.url).searchParams.has("dl"); const API = (env.GDRIVE_API_BASE || "https://www.googleapis.com").replace(/\/$/, "");
+  const tokens = []; if (driveEnabled(env)) { try { tokens.push(await saToken(env)); } catch { /* no sa */ } } if (googleEnabled(env) && await googleAccount(env, name)) { try { tokens.push(await ownerToken(env, name)); } catch { /* not connected */ } }
+  let last = "no token";
+  for (const token of tokens) {
+    const H = { authorization: `Bearer ${token}` };
+    const mr = await fetch(`${API}/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=id,name,mimeType,size,parents`, { headers: H }); if (!mr.ok) { last = `meta ${mr.status}`; continue; }
+    const m = await mr.json(); const parent = (m.parents || [])[0];
+    let inside = roots.has(parent);
+    if (!inside && parent) { const pr = await fetch(`${API}/drive/v3/files/${encodeURIComponent(parent)}?supportsAllDrives=true&fields=parents`, { headers: H }); if (pr.ok) inside = ((await pr.json()).parents || []).some(p => roots.has(p)); }
+    if (!inside) return withCookie(json({ error: "이 층의 폴더 밖 파일" }, 403), g.setCookie);
+    const gdoc = /^application\/vnd\.google-apps\./.test(m.mimeType || "") && m.mimeType !== "application/vnd.google-apps.folder";
+    const url = gdoc ? `${API}/drive/v3/files/${encodeURIComponent(id)}/export?mimeType=application/pdf` : `${API}/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`;
+    const r = await fetch(url, { headers: H }); if (!r.ok) { last = `media ${r.status}`; continue; }
+    const h = new Headers(); const ct = gdoc ? "application/pdf" : (r.headers.get("content-type") || m.mimeType || "application/octet-stream"); h.set("content-type", ct);
+    if (r.headers.get("content-length")) h.set("content-length", r.headers.get("content-length"));
+    const fname = gdoc ? `${m.name}.pdf` : m.name; h.set("content-disposition", `${dl ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fname)}`);
+    h.set("cache-control", "private, max-age=300"); h.set("x-content-type-options", "nosniff"); if (g.setCookie) h.append("set-cookie", g.setCookie);
+    return new Response(r.body, { status: 200, headers: h });
+  }
+  return withCookie(json({ error: `파일을 읽지 못했습니다 (${last}) — 폴더가 서비스 계정에 공유돼 있는지 확인` }, 404), g.setCookie);
 }
 const slim = f => ({ id: f.id, name: f.name, mime: f.mimeType, size: f.size ? Number(f.size) : null, modifiedAt: f.modifiedTime, url: f.webViewLink || `https://drive.google.com/open?id=${f.id}` });
 async function afterUpload(env, name, driveUrl, token) { const d = await driveListing(env, name, driveUrl, { force: true, token }); if (!d.error) await detectDocsEvents(env, name, d.files, "drive"); }

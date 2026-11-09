@@ -1,0 +1,16 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Office · 개인정보처리방침</title>
+<style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1e2430}h1{font-size:22px}h2{font-size:16px;margin-top:28px}code{background:#f2f4f7;padding:1px 5px;border-radius:4px}</style></head><body>
+<h1>Agent Office 개인정보처리방침</h1>
+<p>Agent Office는 연구 프로젝트 참여자가 진행 상황·자료·토론을 한곳에서 보는 비공개 도구입니다. 참여자는 프로젝트 저장소(GitHub)의 협업자로 초대된 사람으로 한정됩니다.</p>
+<h2>수집하는 정보</h2>
+<ul><li><b>GitHub 로그인</b>: 로그인 아이디와 프로필 사진, 그리고 "이 사람이 프로젝트 저장소를 읽을 수 있는가"를 확인하기 위한 접근 토큰. 토큰은 브라우저에 내려가지 않고 서명된 HttpOnly 쿠키 안에만 있습니다.</li>
+<li><b>Google 계정(프로젝트 소유자만)</b>: 소유자가 자료실 업로드를 켜기 위해 연결하는 경우, Google 계정 이메일과 <code>drive.file</code> 범위(이 앱이 만든 파일·폴더에만 접근)의 토큰을 서버에 보관합니다. 참여자의 Google 계정은 수집하지 않습니다.</li>
+<li><b>푸시 알림</b>: 알림을 켠 기기의 구독 정보(엔드포인트·키)와 선택한 알림 종류.</li></ul>
+<h2>사용 목적</h2>
+<p>프로젝트 층의 접근 제어, 자료실 파일의 목록·업로드·열람, 회의(GitHub Discussions) 연동, 알림 발송. 그 밖의 목적으로 쓰거나 제3자에게 제공하지 않습니다.</p>
+<h2>Google 사용자 데이터</h2>
+<p>Google API로 얻은 정보는 위 목적(소유자 Drive 폴더에 파일 저장·목록·공유 설정)에만 쓰며, <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API 서비스 사용자 데이터 정책</a>(제한적 사용 요건 포함)을 따릅니다. 소유자는 자료실에서 언제든 연결을 해제할 수 있고, 해제 시 토큰은 폐기·삭제됩니다.</p>
+<h2>보관과 삭제</h2>
+<p>데이터는 Cloudflare(Workers·D1)에 저장됩니다. 저장소 협업자에서 빠지면 그 프로젝트 층에 접근할 수 없게 되고, 알림 구독은 기기에서 끄는 즉시 삭제됩니다. 삭제 요청은 아래 연락처로 보내 주세요.</p>
+<h2>연락처</h2><p>geminihg11@gmail.com</p>
+<p style="color:#6b7280;font-size:13px">시행일 2026-11-09</p></body></html>

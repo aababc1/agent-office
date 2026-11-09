@@ -22,6 +22,7 @@ export function serviceAccount(env) {
   return sa;
 }
 
+export const saToken = env => accessToken(env);
 async function accessToken(env) {
   if (cached && cached.exp > Date.now() + 60e3) return cached.token;
   const sa = serviceAccount(env);

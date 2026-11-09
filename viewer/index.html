@@ -42,6 +42,13 @@
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+.pv{position:fixed;inset:0;background:rgba(10,14,22,.78);z-index:80;display:flex;flex-direction:column}
+.pv .pvh{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--card,#fff);color:var(--ink);border-bottom:1px solid var(--line)}
+.pv .pvh b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.pv .pvh .btn{padding:4px 9px}
+.pv .pvb{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto;padding:10px}
+.pv .pvb img{max-width:100%;max-height:100%;object-fit:contain;background:#fff;border-radius:6px}.pv .pvb iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
+.pv .pvb pre{width:100%;height:100%;margin:0;overflow:auto;background:#fff;color:#1e2430;font:12px/1.5 var(--mono);padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-word}
+.pv .pvb .none{color:#dde3ea;text-align:center;font-size:13px}
 .card.flash{animation:cardflash 1.8s ease-out}@keyframes cardflash{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
 html,body{height:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.45;
@@ -1232,12 +1239,12 @@ function renderPipeline() {
   // ---- 3F 관제실 · 서고 · 갤러리 (worker mode only — needs the floor's discussions/docs)
   if (MODE === 'worker' && WK.user) {
     const L = T.list || {discussions: []}; const dl = L.discussions || []; const newD = dl.filter(d => Date.now() - Date.parse(d.updatedAt || 0) < dayMs).length;
-    const X2 = X.data || {}; const gfiles = (X2.files || []); const dfiles = (X2.driveFiles || []).filter(f => !f.dir); const allFiles = [...dfiles.map(f => ({name: f.path, at: f.modifiedAt, url: f.url, by: f.by})), ...gfiles.map(f => ({name: f.name, at: f.updatedAt, url: f.url, by: f.by}))].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+    const X2 = X.data || {}; const gfiles = (X2.files || []); const dfiles = (X2.driveFiles || []).filter(f => !f.dir); const allFiles = [...dfiles.map(f => ({name: f.path, at: f.modifiedAt, url: f.url, by: f.by, pv: {id: f.id, name: f.name, path: f.path, mime: f.mime, size: f.size, url: f.url}})), ...gfiles.map(f => ({name: f.name, at: f.updatedAt, url: f.url, by: f.by}))].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
     const pics = allFiles.filter(f => /\.(png|jpe?g|svg|gif|webp|pdf)$/i.test(f.name)).slice(0, 6); const newF = allFiles.filter(f => f.at && Date.now() - Date.parse(f.at) < dayMs).length;
     const hue = str => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
     html += `<div class="lvl"><div class="fl">3F 관제실 · 서고 · 갤러리</div><div class="civ">
       <div class="cv" data-go="talk"><div class="h">💬 관제실 · 회의<span class="bd">${newD ? `새 글 ${newD}` : (dl.length ? `${dl.length}개` : '')}</span></div><div class="scr">${dl.length ? dl.slice(0, 2).map((d, k) => `<div class="${k ? 's' : 't'}">${esc(d.title)}${k === 0 && d.author ? ` <span style="opacity:.6;font-weight:400">· ${esc(d.author.login)} · ${fmtRel(d.updatedAt)}</span>` : ''}</div>`).join('') : '<div class="s">아직 글이 없습니다 — "새 글"로 시작</div>'}</div></div>
-      <div class="cv" data-go="docs"><div class="h">📎 서고 · 자료<span class="bd">${newF ? `새 자료 ${newF}` : (allFiles.length ? `${allFiles.length}개` : '')}</span></div><div class="shelf">${allFiles.slice(0, 14).map(f => `<i style="height:${18 + (hue(f.name) % 24)}px;background:hsl(${hue(f.name)} 45% 55%)${f.url ? ';cursor:pointer' : ''}" title="${esc(f.name)}${f.url ? ' — 열기' : ''}"${f.url ? ` data-url="${esc(f.url)}"` : ''}></i>`).join('') || '<i style="height:6px;background:var(--line)"></i>'}</div><div class="sub">${allFiles[0] ? `${esc(allFiles[0].name)} · ${fmtRel(allFiles[0].at)}` : (X2.drive ? 'Drive 폴더 연결됨' : '자료 없음')}</div></div>
+      <div class="cv" data-go="docs"><div class="h">📎 서고 · 자료<span class="bd">${newF ? `새 자료 ${newF}` : (allFiles.length ? `${allFiles.length}개` : '')}</span></div><div class="shelf">${allFiles.slice(0, 14).map(f => `<i style="height:${18 + (hue(f.name) % 24)}px;background:hsl(${hue(f.name)} 45% 55%)${f.url ? ';cursor:pointer' : ''}" title="${esc(f.name)}${f.url ? ' — 열기' : ''}"${f.url ? ` data-url="${esc(f.url)}"` : ''}${f.pv ? ` data-pv="${esc(JSON.stringify(f.pv))}"` : ''}></i>`).join('') || '<i style="height:6px;background:var(--line)"></i>'}</div><div class="sub">${allFiles[0] ? `${esc(allFiles[0].name)} · ${fmtRel(allFiles[0].at)}` : (X2.drive ? 'Drive 폴더 연결됨' : '자료 없음')}</div></div>
       <div class="cv" data-go="docs"><div class="h">🖼 갤러리<span class="bd">${pics.length ? `${pics.length}장` : ''}</span></div><div class="frames">${pics.map(f => `<a href="${esc(f.url || '#')}" target="_blank" rel="noopener" title="${esc(f.name)}"><i style="background:linear-gradient(135deg,hsl(${hue(f.name)} 50% 70%),hsl(${(hue(f.name) + 40) % 360} 50% 45%))"></i></a>`).join('') || '<a><i style="background:var(--paper)"></i></a>'}</div><div class="sub">${pics[0] ? esc(pics[0].name) : '그림·PDF가 올라오면 액자에 걸립니다'}</div></div></div></div>`;
   }
   const un = run.unplanned || {}; if (Object.keys(un).length) html += `<div class="unplanned">plan에 없는 process: ${Object.entries(un).map(([k, v]) => `<code>${esc(k)}</code> ${v.done}✓${v.failed ? ` ${v.failed}✕` : ''}${v.running ? ` ${v.running}▶` : ''}`).join(' · ')}</div>`;
@@ -1251,7 +1258,7 @@ function renderPipeline() {
   const cbh = $('cbh'); if (cbh) cbh.onclick = () => { const b = $('cb'); b.classList.toggle('open'); cbh.querySelector('.tg').textContent = b.classList.contains('open') ? '▾' : '▸ 펼치기'; };
   // 3F shortcuts: a shelf bar opens that file; the card itself goes to the 자료/회의 card — the phone tab when the tab bar is on screen,
   // otherwise scroll the desktop card into view and flash it (the tab buttons report display:inline-block even inside a hidden bar, so test geometry)
-  el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const bar = ev.target.closest('i[data-url]'); if (bar) { window.open(bar.dataset.url, '_blank', 'noopener'); return; }
+  el.querySelectorAll('.cv[data-go]').forEach(c => { c.onclick = ev => { if (ev.target.closest('a')) return; const bar = ev.target.closest('i[data-url]'); if (bar) { if (bar.dataset.pv) { try { openPreview(JSON.parse(bar.dataset.pv)); return; } catch (e) { /* fall through */ } } window.open(bar.dataset.url, '_blank', 'noopener'); return; }
     const t = c.dataset.go; const b = document.querySelector(`.tabs button[data-t="${t}"]`); if (b && b.getClientRects().length) b.click(); else { const card = $(t === 'talk' ? 'talk-card' : 'docs-card'); if (card) { card.scrollIntoView({behavior: 'smooth', block: 'start'}); card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1800); } } }; });
   if (!S.progress || !((S.progress.progress || {}).tasksTotal)) renderPipelineRatio();
 }
@@ -1290,7 +1297,8 @@ function renderDocs() {
   if ((d.links || []).length) html += `<div class="group">링크</div><ul class="dlist">${d.links.map(l => `<li><a class="xitem" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="xi">🔗</span><span class="xt">${esc(l.name || l.url)}</span><span class="xw">${esc(l.note || '')}</span></a></li>`).join('')}</ul>`;
   if (d.drive) {
     if (dfiles.length) {   // grouped: root files first, then one block per sub-folder (a topic's folder "#n 제목" links to its discussion)
-      const item = f => `<li><a class="xitem ${isNew(f.modifiedAt) && !f.dir ? 'new' : ''}" href="${esc(f.url || d.drive)}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.modifiedAt ? fmtRel(f.modifiedAt) : ''}</span></span><span class="xw">${f.dir ? '폴더' : fmtSize(f.size)}</span></a></li>`;
+      const item = f => f.dir ? `<li><a class="xitem" href="${esc(f.url || d.drive)}" target="_blank" rel="noopener" title="${esc(f.path)}"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${f.modifiedAt ? fmtRel(f.modifiedAt) : ''}</span></span><span class="xw">폴더</span></a></li>`
+        : `<li><a class="xitem ${isNew(f.modifiedAt) ? 'new' : ''}" href="${esc(fileHref(f))}"${pvAttr(f)} title="${esc(f.path)} — 누르면 미리보기"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${f.modifiedAt ? fmtRel(f.modifiedAt) : ''}</span></span><span class="xw">${fmtSize(f.size)}${f.url ? ` <a class="xd" href="${esc(f.url)}" target="_blank" rel="noopener" title="Drive에서 열기" style="color:var(--muted);text-decoration:none">↗</a>` : ''}</span></a></li>`;
       const root = dfiles.filter(f => !f.dir && !f.path.includes('/')); const dirs = dfiles.filter(f => f.dir && !f.path.includes('/'));
       html += `<div class="group">Drive · 최근 순${d.driveAt ? ` <span style="text-transform:none;letter-spacing:0">(${fmtRel(d.driveAt)} 기준)</span>` : ''}</div>`;
       if (root.length) html += `<ul class="dlist">${root.map(item).join('')}</ul>`;
@@ -1309,6 +1317,7 @@ function renderDocs() {
   el.innerHTML = html;
   const rb = $('x-refresh'); if (rb) rb.onclick = () => { rb.disabled = true; loadDocs(true); };
   const ub = $('x-up'); if (ub) { ub.onclick = () => $('x-file').click(); $('x-file').onchange = () => uploadForm([...$('x-file').files]); }
+  bindPreview(el);
   el.querySelectorAll('a[data-talk]').forEach(a => { a.onclick = ev => { ev.preventDefault(); openTalk(Number(a.dataset.talk)); const b = document.querySelector('.tabs button[data-t="talk"]'); if (b && b.getClientRects().length) b.click(); else { const c = $('talk-card'); if (c) c.scrollIntoView({behavior: 'smooth', block: 'start'}); } }; });
   const mb = $('x-member'); if (mb) mb.onclick = () => memberForm();
   const mk = $('x-mkfolder'); if (mk) mk.onclick = async () => { mk.disabled = true; $('x-mkmsg').textContent = '만드는 중…'; try { const r = await wkFetch(`/api/projects/${encodeURIComponent(S.project)}/drive/connect-folder`, {method: 'POST', body: '{}'}); $('x-mkmsg').textContent = `${r.appFolder.name} 생성${r.saShared ? '' : ' (목록용 공유 실패 — 서비스 계정을 뷰어로 추가)'}`; loadDocs(true); } catch (e) { $('x-mkmsg').textContent = `실패: ${e.message}`; mk.disabled = false; } };
@@ -1325,6 +1334,23 @@ function memberForm() {
     try { const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/drive/member`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify({email, role: $('x-role').value})}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); $('x-mmsg').textContent = `${email} 추가됨 (${j.permission.role}) — 초대 메일 발송`; $('x-email').value = ''; }
     catch (e) { $('x-mmsg').textContent = `실패: ${e.message}`; } $('x-madd').disabled = false; };
 }
+
+// ---- 미리보기: the file comes through the Worker (service account / owner token), so GitHub login is all a participant needs
+const PV_TEXT = /^(text\/|application\/(json|x-yaml|yaml|xml|x-sh|csv)|application\/vnd\.ms-excel$)/;
+function fileHref(f) { return `/api/projects/${encodeURIComponent(S.project)}/drive/file/${encodeURIComponent(f.id)}`; }
+function openPreview(f) {
+  document.querySelectorAll('.pv').forEach(x => x.remove());
+  const src = fileHref(f); const mime = f.mime || ''; const gdoc = /^application\/vnd\.google-apps\./.test(mime);
+  const kind = /^image\//.test(mime) ? 'img' : (mime === 'application/pdf' || gdoc) ? 'pdf' : PV_TEXT.test(mime) || /\.(md|txt|tsv|csv|log|yaml|yml|json|sh|py|r|fa|fasta|gff|bed)$/i.test(f.name || '') ? 'text' : 'none';
+  const el = document.createElement('div'); el.className = 'pv';
+  el.innerHTML = `<div class="pvh"><b title="${esc(f.path || f.name)}">${esc(f.name)}${f.size ? ` <span style="color:var(--muted);font-weight:400">· ${fmtSize(f.size)}</span>` : ''}</b><a class="btn" href="${esc(src)}?dl=1">⬇ 다운로드</a>${f.url ? `<a class="btn" href="${esc(f.url)}" target="_blank" rel="noopener">Drive ↗</a>` : ''}<button class="btn" type="button" id="pv-x">✕</button></div>
+    <div class="pvb" id="pv-b">${kind === 'img' ? `<img src="${esc(src)}" alt="">` : kind === 'pdf' ? `<iframe src="${esc(src)}#view=FitH" title="preview"></iframe>` : kind === 'text' ? '<pre>불러오는 중…</pre>' : `<div class="none">이 형식은 앱 안에서 미리보기가 없습니다<br><small>${esc(mime || '')}</small><br><br>다운로드하거나 Drive에서 여세요</div>`}</div>`;
+  document.body.appendChild(el);
+  const close = () => el.remove(); $('pv-x').onclick = close; el.onclick = ev => { if (ev.target === el || ev.target.id === 'pv-b') close(); }; document.addEventListener('keydown', function k(ev) { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', k); } });
+  if (kind === 'text') fetch(src, {credentials: 'same-origin'}).then(r => r.ok ? r.text() : Promise.reject(new Error(`api ${r.status}`))).then(t => { const pre = el.querySelector('pre'); if (pre) pre.textContent = t.length > 400000 ? t.slice(0, 400000) + '\n…(잘림, 다운로드로 전체)' : t; }).catch(e => { const pre = el.querySelector('pre'); if (pre) pre.textContent = `읽기 실패: ${e.message}`; });
+}
+function bindPreview(root) { root.querySelectorAll('a[data-pv]').forEach(a => { a.onclick = ev => { if (ev.target.closest('.xd')) return; ev.preventDefault(); try { openPreview(JSON.parse(a.dataset.pv)); } catch (e) { /* ignore */ } }; }); }
+const pvAttr = f => ` data-pv="${esc(JSON.stringify({id: f.id, name: f.name, path: f.path, mime: f.mime, size: f.size, url: f.url}))}"`;
 
 // ---- Drive 업로드: browser → (session from the Worker) → Google directly; small files fall back to the Worker proxy. Then optionally a 회의 post listing the files.
 // topic = {number, title} → the file lands in the topic's sub-folder "#n 제목" (created on first use); without a topic, the floor folder itself
@@ -1431,12 +1457,12 @@ function renderTalk() {
     el.innerHTML = `<div class="row"><button class="btn" type="button" id="d-back">← 목록</button><a class="btn" href="${esc(d.url)}" target="_blank" rel="noopener">GitHub에서 열기</a></div>
       <div><div style="font-weight:600">${esc(d.title)}</div><div class="dmeta">${who(d.author)}<span>${fmtRel(d.createdAt)}</span>${d.category ? `<span>· ${esc(d.category)}</span>` : ''}</div></div>
       <div class="gh-md">${d.html || ''}</div>
-      ${(() => { const pre = `#${d.number} `; const fs = ((X.data && X.data.driveFiles) || []).filter(f => !f.dir && f.path.startsWith(pre)); const dir = ((X.data && X.data.driveFiles) || []).find(f => f.dir && f.path.startsWith(pre) && !f.path.includes('/')); return (fs.length || dir) ? `<div class="group">📁 이 주제의 자료 (${fs.length})${dir ? ` · <a href="${esc(dir.url)}" target="_blank" rel="noopener" style="color:var(--accent);text-transform:none;letter-spacing:0">Drive 폴더</a>` : ''}</div><ul class="dlist">${fs.map(f => `<li><a class="xitem" href="${esc(f.url)}" target="_blank" rel="noopener"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${fmtRel(f.modifiedAt)}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>` : ''; })()}
+      ${(() => { const pre = `#${d.number} `; const fs = ((X.data && X.data.driveFiles) || []).filter(f => !f.dir && f.path.startsWith(pre)); const dir = ((X.data && X.data.driveFiles) || []).find(f => f.dir && f.path.startsWith(pre) && !f.path.includes('/')); return (fs.length || dir) ? `<div class="group">📁 이 주제의 자료 (${fs.length})${dir ? ` · <a href="${esc(dir.url)}" target="_blank" rel="noopener" style="color:var(--accent);text-transform:none;letter-spacing:0">Drive 폴더</a>` : ''}</div><ul class="dlist">${fs.map(f => `<li><a class="xitem" href="${esc(fileHref(f))}"${pvAttr(f)} title="누르면 미리보기"><span class="xi">${driveIcon(f)}</span><span class="xm"><span class="xt">${esc(f.name)}</span><span class="xs">${esc(f.by || '')}${f.by ? ' · ' : ''}${fmtRel(f.modifiedAt)}</span></span><span class="xw">${fmtSize(f.size)}</span></a></li>`).join('')}</ul>` : ''; })()}
       ${(d.comments || []).map(x => c(x, '') + (x.replies || []).map(r => c(r, 'reply')).join('')).join('')}
       <textarea id="c-body" placeholder="댓글 (마크다운)"></textarea>
       <label class="ck"><input type="checkbox" id="c-ctx"> 지금 보는 세션 링크 첨부</label>
       <div class="row"><button class="btn on" type="button" id="c-send">댓글 달기</button>${X.data && X.data.drive && X.data.driveEnabled ? attachButton('c-body', 'c-msg', {number: d.number, title: d.title}) : ''}<span class="note" id="c-msg"></span></div>`;
-    bindAttach(el);
+    bindAttach(el); bindPreview(el);
     $('d-back').onclick = () => { T.mode = 'list'; T.open = null; renderTalk(); };
     $('c-send').onclick = async () => { const body = $('c-body').value.trim(); if (!body) return; $('c-send').disabled = true; $('c-msg').textContent = '…';
       try { const r = await fetch(`/api/projects/${encodeURIComponent(S.project)}/discussions/${d.number}/comments`, {method: 'POST', headers: {'content-type': 'application/json'}, credentials: 'same-origin',
@@ -1602,7 +1628,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-09.7';
+const OFFICE_BUILD = '2026-11-09.8';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && !window.OFFICE_DATA) {
   navigator.serviceWorker.register('sw.js').then(reg => { setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
