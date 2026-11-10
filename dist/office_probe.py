@@ -526,8 +526,10 @@ def _read_lines(path: str) -> list[str]:
 def _run(cmd: list[str], timeout: int = 20) -> str | None:
     if not shutil.which(cmd[0]):
         return None
+    # a user's SQUEUE_FORMAT / SINFO_FORMAT would clash with our explicit -o/-O ("-O is incompatible with -o"); run with them unset
+    env = {k: v for k, v in os.environ.items() if k not in ("SQUEUE_FORMAT", "SQUEUE_FORMAT2", "SINFO_FORMAT", "SINFO_FORMAT2", "SACCT_FORMAT", "SQUEUE_SORT", "SINFO_SORT")}
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env).stdout
     except (subprocess.SubprocessError, OSError):
         return None
 
