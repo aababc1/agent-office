@@ -25,8 +25,8 @@
 #   ASM_PART="cpu64-only cpu64-only-m512GB" ASM_MAX_NODES=4 ASM_TIME=96:00:00 ASM_FEED_S=900 ASM_NF_ARGS="" ASM_EXCLUDE=$PROJ/manifest/runs_to_exclude.tsv
 #   ASM_SKIP_COHORTS="PRJEB45799 PRJNA1030952"      cohorts `submit`/`feed` never pick (tier 0: Valles-Colomer 2023 saliva/stool, bitBiome); `submit N --cohort X` still can
 #   ASM_SKIP=$PROJ/manifest/asm_skip_samples.txt   one sample per line, left out of every samplesheet (assemblies that ran for days)
-#   (ASM_MAX_NODES counts every live assembly job, metaFun asm_* ones included. K-BDS QOS caps running+pending per user at 10 (QOSMaxSubmitJobPerUserLimit, seen 2026-11-10), so the default is 10;
-#    when no node is idle, new jobs are spread over the ASM_PART partitions by fewest-pending, so a node freeing in any of them starts one of ours)
+#   (ASM_MAX_NODES = how many of our assembly jobs may exist at once, running + pending, metaFun asm_* included. K-BDS QOS submit caps are per partition
+#    (cpu32 10 · cpu64 10 · m512GB 16); when no node is idle new jobs are spread over ASM_PART by fewest-pending, and a capped partition is skipped for the round)
 set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")"
@@ -35,7 +35,7 @@ source ./00_env_local.sh
 : "${QC_DIR:=$PROJ/qc}" "${READS_DIR:=$PROJ/reads}" "${ASM_DIR:=$PROJ/asm}" "${ASMLIST:=$PROJ/manifest/samples_assemble.txt}" "${METAFUN_DIR:=$HOME/metaFun}"
 # metaFun files: fixed names, location found once under $METAFUN_DIR (the layout moved between patches); override with ASM_SHEET_PY / ASM_MERGE_PY / ASM_NF / ASM_NF_CONFIG
 _mf() { local v="$1" name="$2" hit; eval "hit=\${$v:-}"; [ -n "$hit" ] || hit=$(find "$METAFUN_DIR" -name "$name" -not -path '*/work/*' -print -quit 2>/dev/null); [ -s "$hit" ] || { echo "[06] $name not found under $METAFUN_DIR (set $v=/path)" >&2; exit 2; }; echo "$hit"; }
-: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MEM_GB_CPU32:=100}" "${ASM_MEM_GB_M512:=115}" "${ASM_RESERVE_GB:=24}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=10}"
+: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MEM_GB_CPU32:=100}" "${ASM_MEM_GB_M512:=115}" "${ASM_RESERVE_GB:=24}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=18}"
 : "${ASM_TIME:=96:00:00}" "${ASM_FEED_S:=900}" "${ASM_NF_ARGS:=}" "${ASM_EXCLUDE:=$PROJ/manifest/runs_to_exclude.tsv}"
 JOB=metacrc-asm
 CH="$PROJ/manifest/asm_chunks"; SMAP="$PROJ/manifest/sample_runs_all.tsv"; RUNS="$PROJ/runs/asm"; WORK="$PROJ/work/asm"
@@ -73,10 +73,13 @@ cohort_table() {
     END{ for (c in tot) printf "%s\t%d\t%d\t%d\t%d\n", c, tot[c], rd[c]+0, aa[c]+0, live[c]+0 }' "$SMAP" | sort -t$'\t' -k2,2n
   rm -f "$rr" "$as" "$lv"
 }
-pick_part() {   # idle nodes first; otherwise the listed partition where we have the fewest PENDING jobs (spread the queue; a node freeing anywhere then starts one of ours)
-  local best="" bestn=-1 p n; for p in $ASM_PART; do n=$(sinfo -h -p "$p" -t idle -o '%D' 2>/dev/null | awk '{s+=$1} END{print s+0}'); [ "$n" -gt "$bestn" ] && { best="$p"; bestn=$n; }; done
-  if [ "$bestn" -le 0 ]; then best=""; bestn=999999; for p in $ASM_PART; do n=$(squeue -h -u "$USER" -t PENDING -p "$p" -o '%i' 2>/dev/null | wc -l); [ "$n" -lt "$bestn" ] && { best="$p"; bestn=$n; }; done; fi
-  echo "${best:-${ASM_PART%% *}}"; }
+# K-BDS QOS (sacctmgr show qos, 2026-11-10): MaxSubmitJobsPerUser is PER PARTITION — cpu32-only 10 · cpu64-only 10 · cpu64-only-m512gb 16; no running-job or TRES cap, wall 5 d.
+# A partition that answers QOSMaxSubmitJobPerUserLimit is skipped for the rest of the round (CAPPED), the others keep taking jobs.
+CAPPED=""
+pick_part() {   # idle nodes first; otherwise the listed (uncapped) partition where we have the fewest PENDING jobs — a node freeing anywhere then starts one of ours
+  local best="" bestn=-1 p n; for p in $ASM_PART; do case " $CAPPED " in *" $p "*) continue ;; esac; n=$(sinfo -h -p "$p" -t idle -o '%D' 2>/dev/null | awk '{s+=$1} END{print s+0}'); [ "$n" -gt "$bestn" ] && { best="$p"; bestn=$n; }; done
+  if [ "$bestn" -le 0 ]; then best=""; bestn=999999; for p in $ASM_PART; do case " $CAPPED " in *" $p "*) continue ;; esac; n=$(squeue -h -u "$USER" -t PENDING -p "$p" -o '%i' 2>/dev/null | wc -l); [ "$n" -lt "$bestn" ] && { best="$p"; bestn=$n; }; done; fi
+  echo "$best"; }
 
 submit_cohort() {   # $1 = BioProject, $2 = max jobs; chunks come from make_asm_samplesheet.py --max-bases (samplesheet.csv or samplesheet.<k>.csv)
   local c="$1" room="${2:-1}" rd="$RUNS/$c" part cores sub=0 sheet k id jid
@@ -93,9 +96,10 @@ submit_cohort() {   # $1 = BioProject, $2 = max jobs; chunks come from make_asm_
       [ "$(wc -l < "$sheet")" -gt 1 ] || { echo "  $id: every sample is in $(basename "$ASM_SKIP") — nothing to submit" >&2; continue; }; fi
     k=$(basename "$sheet" | sed -n 's/^samplesheet\.\([0-9]*\)\.csv$/\1/p'); id="$c${k:+.$k}"; [ -z "$k" ] || { mkdir -p "$RUNS/$id"; cp -f "$sheet" "$RUNS/$id/samplesheet.csv"; }
     [ -s "$CH/chunk.$id.job" ] && squeue -h -j "$(cat "$CH/chunk.$id.job")" >/dev/null 2>&1 && continue   # already queued
-    part="$(pick_part)"; cores=$(sinfo -h -p "$part" -o '%c' 2>/dev/null | head -1); [ -n "$cores" ] || cores=64
+    part="$(pick_part)"; [ -n "$part" ] || { echo "[submit] every partition in {$ASM_PART} is at its QOS submit cap — stopping this round" >&2; echo "CAP"; return 0; }
+    cores=$(sinfo -h -p "$part" -o '%c' 2>/dev/null | head -1); [ -n "$cores" ] || cores=64
     jid=$(sbatch --parsable -J "$JOB:$id" -p "$part" -N 1 -n 1 -c "$cores" --exclusive -t "$ASM_TIME" -o "$RUNS/$id/slurm-%j.out" --wrap "bash '$SELF' node '$id'" 2>&1) \
-      || { echo "[submit] $id: sbatch failed: $jid" >&2; case "$jid" in *QOSMaxSubmitJobPerUserLimit*|*"job submit limit"*) echo "[submit] QOS submit cap reached (running+pending per user; observed 10 on K-BDS 2026-11-10) — stopping this round" >&2; echo "CAP"; return 0 ;; esac; break; }
+      || { case "$jid" in *QOSMaxSubmitJobPerUserLimit*|*"job submit limit"*) echo "[submit] $part at its QOS submit cap (cpu32 10 · cpu64 10 · m512GB 16 per user) — using the other partitions" >&2; CAPPED="$CAPPED $part"; continue ;; esac; echo "[submit] $id: sbatch failed: $jid" >&2; break; }
     echo "$jid" > "$CH/chunk.$id.job"; sub=$(( sub + 1 ))
     echo "  job $jid  $JOB:$id  on $part ($cores cores) ← $(( $(wc -l < "$sheet") - 1 )) samples ($ASM_ASSEMBLER, -m $ASM_MEM_GB GB)" >&2
   done
