@@ -20,8 +20,8 @@
 #   ./06_assemble_kbds.sh feed                       loop in tmux (every ASM_FEED_S)
 #   ./06_assemble_kbds.sh status                     assembled / total, jobs, node-hours so far, per-cohort ✓
 #   ./06_assemble_kbds.sh node <chunk-id>            (what sbatch runs)
-# Knobs (00_env_local.sh): METAFUN_DIR=$HOME/metaFun ASM_ENV=metacrc-asm ASM_ASSEMBLER=metaspades ASM_MEM_GB=120 ASM_MEM_GB_CPU32=100 ASM_MAX_BASES=600e9
-#   node packing = min(cores/8, 0.9·RAM/mem) samples × (cores/that) threads: 1 TB → 8×8×120 GB · 512 GB → 3×21×120 · cpu32 224 GB → 2×16×100 (ASM_MEM_GB_CPU32; a task above its -m cap fails → retry 1 → ignore, so put deep cohorts on the 1 TB nodes)
+# Knobs (00_env_local.sh): METAFUN_DIR=$HOME/metaFun ASM_ENV=metacrc-asm ASM_ASSEMBLER=metaspades ASM_MEM_GB=120 ASM_MEM_GB_M512=115 ASM_MEM_GB_CPU32=100 ASM_RESERVE_GB=24 ASM_MAX_BASES=600e9
+#   node packing = min(cores/8, (RAM−reserve)/mem) samples × (cores/that) threads: 1 TB → 8×8×120 GB · 512 GB → 4×16×115 · cpu32 224 GB → 2×16×100 (ASM_MEM_GB_*; a task above its -m cap fails → retry 1 → ignore, so put deep cohorts on the 1 TB nodes)
 #   ASM_PART="cpu64-only cpu64-only-m512GB" ASM_MAX_NODES=4 ASM_TIME=96:00:00 ASM_FEED_S=900 ASM_NF_ARGS="" ASM_EXCLUDE=$PROJ/manifest/runs_to_exclude.tsv
 #   ASM_SKIP_COHORTS="PRJEB45799 PRJNA1030952"      cohorts `submit`/`feed` never pick (tier 0: Valles-Colomer 2023 saliva/stool, bitBiome); `submit N --cohort X` still can
 #   ASM_SKIP=$PROJ/manifest/asm_skip_samples.txt   one sample per line, left out of every samplesheet (assemblies that ran for days)
@@ -34,7 +34,7 @@ source ./00_env_local.sh
 : "${QC_DIR:=$PROJ/qc}" "${READS_DIR:=$PROJ/reads}" "${ASM_DIR:=$PROJ/asm}" "${ASMLIST:=$PROJ/manifest/samples_assemble.txt}" "${METAFUN_DIR:=$HOME/metaFun}"
 # metaFun files: fixed names, location found once under $METAFUN_DIR (the layout moved between patches); override with ASM_SHEET_PY / ASM_MERGE_PY / ASM_NF / ASM_NF_CONFIG
 _mf() { local v="$1" name="$2" hit; eval "hit=\${$v:-}"; [ -n "$hit" ] || hit=$(find "$METAFUN_DIR" -name "$name" -not -path '*/work/*' -print -quit 2>/dev/null); [ -s "$hit" ] || { echo "[06] $name not found under $METAFUN_DIR (set $v=/path)" >&2; exit 2; }; echo "$hit"; }
-: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MEM_GB_CPU32:=100}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
+: "${ASM_SKIP:=$PROJ/manifest/asm_skip_samples.txt}" "${ASM_SKIP_COHORTS:=PRJEB45799 PRJNA1030952}" "${ASM_ENV:=metacrc-asm}" "${ASM_ASSEMBLER:=metaspades}" "${ASM_MEM_GB:=120}" "${ASM_MEM_GB_CPU32:=100}" "${ASM_MEM_GB_M512:=115}" "${ASM_RESERVE_GB:=24}" "${ASM_MAX_BASES:=600e9}" "${ASM_PART:=cpu64-only cpu64-only-m512GB}" "${ASM_MAX_NODES:=4}"
 : "${ASM_TIME:=96:00:00}" "${ASM_FEED_S:=900}" "${ASM_NF_ARGS:=}" "${ASM_EXCLUDE:=$PROJ/manifest/runs_to_exclude.tsv}"
 JOB=metacrc-asm
 CH="$PROJ/manifest/asm_chunks"; SMAP="$PROJ/manifest/sample_runs_all.tsv"; RUNS="$PROJ/runs/asm"; WORK="$PROJ/work/asm"
@@ -139,8 +139,9 @@ node)
   if ! command -v conda >/dev/null 2>&1; then for c in "${CONDA_ROOT:-}" "$HOME/miniconda3" "$HOME/anaconda3" /apps/application/miniconda3; do [ -n "$c" ] && [ -f "$c/etc/profile.d/conda.sh" ] && { source "$c/etc/profile.d/conda.sh"; break; }; done; fi
   eval "$(conda shell.bash hook)"; conda activate "$ASM_ENV" || { echo "[node] conda env $ASM_ENV not found"; exit 1; }
   export NXF_OFFLINE=true
-  CORES=$(nproc); RAM=$(awk '/MemTotal/{printf "%d", $2/1048576*0.9}' /proc/meminfo)
-  MEM=$ASM_MEM_GB; [ "$CORES" -le 32 ] && [ -n "$ASM_MEM_GB_CPU32" ] && MEM=$ASM_MEM_GB_CPU32   # cpu32 (224 GB): user decision 2026-11-08 → 2 × 16 thr × 100 GB
+  CORES=$(nproc); RAMT=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo); RAM=$(( RAMT - ASM_RESERVE_GB ))   # leave ASM_RESERVE_GB for the OS, nextflow and page cache
+  # per-sample -m by node class (user decisions 2026-11-08/10): 1 TB → 8 × 8 thr × 120 GB · 512 GB → 4 × 16 × 115 · cpu32 224 GB → 2 × 16 × 100
+  MEM=$ASM_MEM_GB; if [ "$RAMT" -le 300 ]; then MEM=${ASM_MEM_GB_CPU32:-$MEM}; elif [ "$RAMT" -le 600 ]; then MEM=${ASM_MEM_GB_M512:-$MEM}; fi
   PER=$(( CORES / 8 )); [ $(( RAM / MEM )) -lt "$PER" ] && PER=$(( RAM / MEM )); [ "$PER" -lt 1 ] && PER=1; CPUS=${CPUS:-$(( CORES / PER ))}
   echo "[node] $(hostname) cores=$CORES ram=${RAM}G chunk=$ID samples=$(( $(wc -l < samplesheet.csv) - 1 )) $ASM_ASSEMBLER: $PER at a time × $CPUS thr × $MEM GB"
   LOADF="$CH/chunk.$ID.load"
