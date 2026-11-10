@@ -84,17 +84,18 @@ pick_part() {   # idle nodes first; otherwise the listed (uncapped) partition wh
 submit_cohort() {   # $1 = BioProject, $2 = max jobs; chunks come from make_asm_samplesheet.py --max-bases (samplesheet.csv or samplesheet.<k>.csv)
   local c="$1" room="${2:-1}" rd="$RUNS/$c" part cores sub=0 sheet k id jid
   mkdir -p "$rd"
-  python3 "$(_mf ASM_SHEET_PY make_asm_samplesheet.py)" --manifest "$MANIFEST" --reads-dir "$READS_DIR" --cohort "$c" --skip-done "$ASM_DIR" --max-bases "$ASM_MAX_BASES" --out "$rd/samplesheet.csv" \
-    || { echo "[submit] $c: samplesheet failed" >&2; return 1; }
+  python3 "$(_mf ASM_SHEET_PY make_asm_samplesheet.py)" --manifest "$MANIFEST" --reads-dir "$READS_DIR" --cohort "$c" --skip-done "$ASM_DIR" --max-bases "$ASM_MAX_BASES" --out "$rd/samplesheet.csv" >&2 \
+    || { echo "[submit] $c: samplesheet failed" >&2; echo 0; return 1; }
   for sheet in "$rd"/samplesheet.csv "$rd"/samplesheet.*.csv; do
     [ -s "$sheet" ] || continue; [ "$(wc -l < "$sheet")" -gt 1 ] || continue; [ "$sub" -lt "$room" ] || break
     # largest samples first (base_count, column 5): Nextflow starts tasks in sheet order, so the chunk's tail is made of small
     # samples and the node is not left running 1–2 long assemblies on 64 cores (seen 2026-11-08: load 8–16 on 1 TB nodes)
     { head -1 "$sheet"; tail -n +2 "$sheet" | sort -t, -k5,5gr; } > "$sheet.tmp" && mv -f "$sheet.tmp" "$sheet"
+    k=$(basename "$sheet" | sed -n 's/^samplesheet\.\([0-9]*\)\.csv$/\1/p'); id="$c${k:+.$k}"
     # ASM_SKIP: one sample_accession per line (pathological assemblies that held a node for days) → dropped from the sheet, listed in the log
     if [ -s "$ASM_SKIP" ]; then awk -F, -v S="$ASM_SKIP" 'BEGIN{while((getline l<S)>0){sub(/[ \t#].*$/,"",l); if(l!="") skip[l]=1}} NR==1||!($1 in skip)' "$sheet" > "$sheet.tmp" && mv -f "$sheet.tmp" "$sheet"
       [ "$(wc -l < "$sheet")" -gt 1 ] || { echo "  $id: every sample is in $(basename "$ASM_SKIP") — nothing to submit" >&2; continue; }; fi
-    k=$(basename "$sheet" | sed -n 's/^samplesheet\.\([0-9]*\)\.csv$/\1/p'); id="$c${k:+.$k}"; [ -z "$k" ] || { mkdir -p "$RUNS/$id"; cp -f "$sheet" "$RUNS/$id/samplesheet.csv"; }
+    [ -z "$k" ] || { mkdir -p "$RUNS/$id"; cp -f "$sheet" "$RUNS/$id/samplesheet.csv"; }
     [ -s "$CH/chunk.$id.job" ] && squeue -h -j "$(cat "$CH/chunk.$id.job")" >/dev/null 2>&1 && continue   # already queued
     part="$(pick_part)"; [ -n "$part" ] || { echo "[submit] every partition in {$ASM_PART} is at its QOS submit cap — stopping this round" >&2; echo "CAP"; return 0; }
     cores=$(sinfo -h -p "$part" -o '%c' 2>/dev/null | head -1); [ -n "$cores" ] || cores=64
