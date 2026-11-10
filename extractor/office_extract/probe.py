@@ -444,6 +444,63 @@ def read_sstat(job_ids: list[str]) -> dict[str, dict[str, Any]]:
     return acct
 
 
+def read_squeue_all(partitions: list[str] | None) -> list[dict[str, Any]]:
+    """Running jobs of every user on the given partitions (name, user, elapsed, nodelist) — public squeue output."""
+    cmd = ["squeue", "-h", "-t", "RUNNING", "-o", "%i|%u|%j|%M|%N"] + (["-p", ",".join(partitions)] if partitions else [])
+    out = _run(cmd)
+    if not out:
+        return []
+    jobs = []
+    for l in out.splitlines():
+        f = l.split("|")
+        if len(f) >= 5:
+            jobs.append({"id": f[0], "user": f[1], "name": f[2], "time": f[3], "nodelist": f[4]})
+    return jobs
+
+
+def expand_hosts(spec: str) -> list[str]:
+    """cpu64-only-[001-003,007] → cpu64-only-001 … (enough for this cluster's names; falls back to the raw string)."""
+    m = re.fullmatch(r"([^\[\]]*)\[([^\]]+)\]", spec.strip())
+    if not m:
+        return [spec.strip()] if spec.strip() else []
+    base, body = m.group(1), m.group(2); hosts = []
+    for part in body.split(","):
+        if "-" in part:
+            lo, hi = part.split("-", 1); w = len(lo)
+            hosts += [f"{base}{str(n).zfill(w)}" for n in range(int(lo), int(hi) + 1)]
+        else:
+            hosts.append(f"{base}{part}")
+    return hosts
+
+
+def read_node_states(partitions: list[str] | None) -> dict[str, dict[str, Any]]:
+    """Per-node load (slurmd's 1-min load average) and memory from `sinfo -N`: visible to every user, so this is how we see
+    how busy OTHER people's exclusive nodes really are. Joined with squeue's NODELIST → user/job per node."""
+    cmd = ["sinfo", "-N", "-h", "-O", "NodeList:40,Partition:30,CPUsState:20,CPUsLoad:12,FreeMem:14,Memory:14,StateCompact:14"]
+    if partitions:
+        cmd += ["-p", ",".join(partitions)]
+    out = _run(cmd)
+    if not out:
+        return {}
+    nodes: dict[str, dict[str, Any]] = {}
+    for l in out.splitlines():
+        f = l.split()
+        if len(f) < 7:
+            continue
+        host, part, cpus, load, free, mem, state = f[:7]
+        try:
+            a, i, o, t = (int(x) for x in cpus.split("/"))
+        except ValueError:
+            a = i = o = t = 0
+        def num(x):
+            try: return float(x)
+            except ValueError: return None
+        ld = num(load); fm = num(free); mm = num(mem)
+        nodes[host] = {"partition": part.rstrip("*"), "alloc": a, "idle": i, "cpus": t, "load": ld, "util": (round(min(1.0, ld / t), 3) if ld is not None and t else None),
+                       "freeMemGB": round(fm / 1024, 1) if fm is not None else None, "memGB": round(mm / 1024, 1) if mm is not None else None, "state": state}
+    return nodes
+
+
 def read_sinfo(partitions: list[str] | None) -> dict[str, Any] | None:
     out = _run(["sinfo", "-h", "-o", "%P|%a|%l|%D|%T"])
     if out is None:
@@ -619,7 +676,16 @@ def probe(plan: dict[str, Any], run_id: str | None = None, site_key: str | None 
                             s["cpuUtil"] = round(sum(j["util"] for j in acc) / len(acc), 3)
     for s in stages.values():
         s.pop("_job", None); s.pop("_job_sep", None); s.pop("_nf_running", None)
-    report["cluster"] = {"squeue": sq, "sinfo": si,
+    # who is on each node of our partitions, and how hard the node is actually working (load vs cores)
+    mine_parts = site.get("partitions") or None; slurm_user = site.get("slurm_user") or os.environ.get("USER")
+    nodes = read_node_states(mine_parts) if si else {}
+    if nodes:
+        allq = read_squeue_all(mine_parts)
+        for j in allq:
+            for host in expand_hosts(j.get("nodelist") or ""):
+                if host in nodes:
+                    nodes[host].update(user=j["user"], job=j["name"], since=j["time"], ours=(j["user"] == slurm_user))
+    report["cluster"] = {"squeue": sq, "sinfo": si, "nodes": nodes or None,
                          "canSubmit": (any(p["idle"] > 0 for p in si["partitions"].values() if p.get("mine")) if si and si["partitions"] else None)}
 
     # 4) roll-up

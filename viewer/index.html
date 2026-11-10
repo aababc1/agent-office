@@ -1218,7 +1218,8 @@ function data3d(order, info, plan, run, ms) {
     const nodes = p.nodes || {}; const total = p.total || 0; const idle = nodes.idle || p.idle || 0; const alloc = (nodes.allocated || 0) + (nodes.mixed || 0); const pj = jobs.filter(j => j.partition === name);
     const ours = pj.filter(j => j.state === 'RUNNING').length; const pending = pj.filter(j => j.state === 'PENDING').length;
     const ut = pj.filter(j => j.state === 'RUNNING' && j.util != null); const util = ut.length ? ut.reduce((a, j) => a + j.util, 0) / ut.length : null;
-    return {name, total, idle, others: Math.max(0, alloc - ours), ours, drained: Math.max(0, total - idle - alloc), gpu: !!p.gpu, mine: !!p.mine, limit: p.timelimit, pending, util, jobs: pj.map(j => ({name: j.name, state: j.state, time: j.time, node: j.nodelist, cpus: j.cpus, util: j.util, busy: j.busyCores, rss: j.maxRssGB}))}; });
+    const hosts = Object.entries(cl.nodes || {}).filter(([h, n]) => n.partition === name).map(([h, n]) => ({host: h, ...n})).sort((a, b) => a.host.localeCompare(b.host));   // per node: who, load vs cores (public sinfo)
+    return {name, total, idle, others: Math.max(0, alloc - ours), ours, drained: Math.max(0, total - idle - alloc), gpu: !!p.gpu, mine: !!p.mine, limit: p.timelimit, pending, util, hosts, jobs: pj.map(j => ({name: j.name, state: j.state, time: j.time, node: j.nodelist, cpus: j.cpus, util: j.util, busy: j.busyCores, rss: j.maxRssGB}))}; });
   const gStages = order.filter(n => info[n].st.groups); const cohorts = [...new Set(gStages.flatMap(n => Object.keys(info[n].st.groups)))].filter(c => c !== '_');
   const nextOf = {}; const doneCohorts = []; for (const c of cohorts) { const n = gStages.find(n => { const g = info[n].st.groups[c]; return g && g.total && g.done < g.total; }); if (n) (nextOf[n] = nextOf[n] || []).push(`${c} ${((info[n].st.groups[c] || {}).total - (info[n].st.groups[c] || {}).done).toLocaleString()}`); else doneCohorts.push(c); }
   const stages = order.map(n => { const i = info[n]; const icon = i.ps.icon || 'machine'; return {name: n, ko: ICON_KO[icon] || '', icon, verb: ({dock: '포장 도착', unpack: '포장 뜯기', sieve: '체질·세척', funnel: '같은 샘플 합치기', build: '리드 → 컨티그', bins: '유전체별 분류', inspect: '다듬기·검수'})[icon] || esc(i.desc).slice(0, 18), done: i.done, total: i.total, failed: i.failed, running: i.running, pending: i.pending, state: i.state, nodeJobs: i.st.nodeJobs || 0, cohorts: nextOf[n] || []}; });
@@ -1700,7 +1701,7 @@ boot();
 </script>
 <!--OFFICE:PWA-START-->
 <script>
-const OFFICE_BUILD = '2026-11-10.2';
+const OFFICE_BUILD = '2026-11-10.3';
 (function () { const b = document.getElementById('t-build'); if (b) b.textContent = 'v' + OFFICE_BUILD; })();
 // A home-screen app can keep an old shell for days: compare the served build with ours when the app comes to the front (and every 30 min);
 // reload silently while hidden, otherwise offer a one-tap refresh.

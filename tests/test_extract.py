@@ -460,3 +460,23 @@ def test_trace_raw_mode_and_new_command_run_header(tmp_path):
     d2 = tmp_path / "work" / "1f" / "old"; d2.mkdir(parents=True); (d2 / ".command.begin").write_text(""); (d2 / ".command.run").write_text("#!/bin/bash\n# NEXTFLOW TASK: fastp_cleanifier (SRR1)\n")
     inf = inflight_tasks(str(tmp_path / "work"))
     assert sorted((x["process"], x["tag"]) for x in inf) == [("assemble", "SAMEA2467000"), ("fastp_cleanifier", "SRR1")]
+
+
+def test_probe_node_states_join_other_users_jobs(tmp_path, monkeypatch):
+    """sinfo -N (load, memory — public) joined with squeue of every user → per node: who runs there and how busy it really is."""
+    from office_extract.probe import probe, expand_hosts
+    assert expand_hosts("cpu64-only-[001-003,007]") == ["cpu64-only-001", "cpu64-only-002", "cpu64-only-003", "cpu64-only-007"] and expand_hosts("cpu32-only-004") == ["cpu32-only-004"]
+    monkeypatch.setenv("PATH", str(tmp_path)); d = tmp_path
+    (d / "squeue").write_text("#!/bin/sh\ncase \"$*\" in\n  *RUNNING*) printf '91|k312a01|tcga-fla|4-02:04:29|cpu64-only-[007-008]\\n92|u|asm_PRJA.1|1-00:00:00|cpu32-only-004\\n' ;;\n"
+                              "  *) printf '92|cpu32-only|asm_PRJA.1|RUNNING|1-00:00:00|96:00:00|1|cpu32-only-004|32|cpu32-only-004\\n' ;;\nesac\n"); (d / "squeue").chmod(0o755)
+    (d / "sinfo").write_text("#!/bin/sh\ncase \"$*\" in\n  *-N*) printf 'cpu64-only-007  cpu64-only-m512GB  64/0/0/64  2.10  400000  515000  alloc\\ncpu64-only-008  cpu64-only-m512GB  64/0/0/64  61.50  90000  515000  alloc\\ncpu32-only-004  cpu32-only  32/0/0/32  30.20  120000  229000  alloc\\ncpu32-only-001  cpu32-only  0/32/0/32  0.01  225000  229000  idle\\n' ;;\n"
+                             "  *) printf 'cpu32-only|up|5-00:00:00|4|allocated\\ncpu32-only|up|5-00:00:00|1|idle\\ncpu64-only-m512GB|up|5-00:00:00|8|allocated\\n' ;;\nesac\n"); (d / "sinfo").chmod(0o755)
+    (d / "sstat").write_text("#!/bin/sh\nexit 1\n"); (d / "sstat").chmod(0o755)
+    (d / "samples.txt").write_text("S1\n"); (d / "asm").mkdir()
+    plan = {"project": "t", "where": "kbds", "sites": {"kbds": {"name": "K", "slurm_user": "u", "partitions": ["cpu32-only", "cpu64-only-m512GB"]}}, "paths": {"PROJ": str(d)},
+            "stages": [{"name": "assemble", "unit": "sample", "units": {"file": "$PROJ/samples.txt"}, "done": {"kind": "file", "path": "$PROJ/asm/{sample}.done"}, "runner": {"kind": "slurm", "job": "asm", "job_sep": "_"}}]}
+    n = probe(plan, "kbds", "kbds")["cluster"]["nodes"]
+    assert n["cpu64-only-007"]["user"] == "k312a01" and n["cpu64-only-007"]["util"] == 0.033 and n["cpu64-only-007"]["ours"] is False     # 64 cores allocated, load 2.1: nearly idle
+    assert n["cpu64-only-008"]["util"] == 0.961 and n["cpu64-only-008"]["freeMemGB"] == 87.9
+    assert n["cpu32-only-004"]["ours"] is True and n["cpu32-only-004"]["job"] == "asm_PRJA.1" and n["cpu32-only-004"]["util"] == 0.944
+    assert n["cpu32-only-001"]["state"] == "idle" and "user" not in n["cpu32-only-001"]
